@@ -188,6 +188,26 @@
   .batch-item-label{flex:1;min-width:0;}
   .batch-item-actions{display:flex;gap:6px;flex-shrink:0;}
   .batch-item-actions button{padding:5px 10px;font-size:.8rem;}
+
+  /* --- Image mode: nested date -> order code -> product rows --- */
+  .date-block{
+    border:1px solid var(--line);border-left:4px solid var(--accent);
+    border-radius:8px;padding:12px 14px;margin-bottom:14px;background:#fdfcfa;
+  }
+  .date-block-head, .order-block-head{
+    display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;
+  }
+  .block-label{font-size:.78rem;color:var(--muted);font-weight:600;flex:0 0 auto;}
+  .date-block-head input, .order-block-head input{max-width:180px;flex:0 1 180px;}
+  .date-block-head .del-btn, .order-block-head .del-btn{margin-left:auto;font-size:.95rem;}
+  .order-list{margin:0 0 10px 6px;padding-left:14px;border-left:2px dashed var(--line);}
+  .order-block{
+    border:1px solid var(--line);border-left:4px solid var(--accent2);
+    border-radius:8px;padding:12px 14px;margin-bottom:12px;background:#fff;
+  }
+  .order-block.order-block-duplicate{border-color:#e2b7ab;background:#fdf3f0;}
+  .dup-warning{color:#b3492f;font-size:.75rem;margin-bottom:8px;}
+  .small-btn{font-size:.78rem;padding:5px 10px;}
 </style>
 </head>
 <body>
@@ -242,17 +262,17 @@
       </div>
     </div>
     <div class="form-panel" id="formPanel">
-      <!-- Tabs for switching between delivery note fields and product table -->
+      <!-- Tabs for switching between company info, order/product entry, and export -->
       <div class="img-tab-bar">
-        <button class="img-tab active" data-tab="info">Thông tin đơn hàng</button>
-        <button class="img-tab" data-tab="products">Sản phẩm</button>
+        <button class="img-tab active" data-tab="info">Thông tin chung</button>
+        <button class="img-tab" data-tab="products">Đơn hàng &amp; sản phẩm</button>
         <button class="img-tab" data-tab="export">Xuất Excel</button>
       </div>
 
       <!-- Tab: Info -->
       <div class="img-tab-content" id="tabInfo">
         <div class="card" style="margin-bottom:12px;">
-          <h2>Thông tin công ty &amp; đơn hàng</h2>
+          <h2>Thông tin công ty</h2>
           <div class="grid2">
             <div>
               <label>Tên công ty (dòng 1)</label>
@@ -271,14 +291,6 @@
               <input type="text" id="imgAddress">
             </div>
             <div>
-              <label>Ngày đặt hàng (订单日期)</label>
-              <input type="text" id="imgDate" placeholder="yyyy.mm.dd">
-            </div>
-            <div>
-              <label>Số đơn hàng (订单号)</label>
-              <input type="text" id="imgOrderNo">
-            </div>
-            <div>
               <label>Người liên hệ cuối trang (联系人)</label>
               <input type="text" id="imgContact">
             </div>
@@ -286,43 +298,28 @@
         </div>
       </div>
 
-      <!-- Tab: Products -->
+      <!-- Tab: Orders & products (one image can contain several order codes, each with its own products) -->
       <div class="img-tab-content hidden" id="tabProducts">
         <div class="card">
-          <h2>Danh sách sản phẩm <span class="badge" id="imgItemCount">0 dòng</span></h2>
-          <div style="overflow-x:auto;">
-            <table class="items">
-              <thead>
-                <tr>
-                  <th style="width:14%">物料代码<span class="th-sub">Mã hàng</span></th>
-                  <th style="width:20%">品名<span class="th-sub">Tên sản phẩm</span></th>
-                  <th style="width:34%">规格<span class="th-sub">Quy cách</span></th>
-                  <th style="width:8%">数量<span class="th-sub">Số lượng</span></th>
-                  <th style="width:8%">单位<span class="th-sub">Đơn vị</span></th>
-                  <th style="width:10%">备注<span class="th-sub">Ghi chú</span></th>
-                  <th class="col-del"></th>
-                </tr>
-              </thead>
-              <tbody id="imgItemsBody"></tbody>
-            </table>
-          </div>
+          <h2>Đơn hàng &amp; sản phẩm</h2>
+          <div id="imgDatesContainer"></div>
           <div class="row-actions">
-            <button class="plain" id="imgAddRow">+ Thêm dòng</button>
+            <button class="plain" id="imgAddDateBtn">+ Thêm ngày</button>
           </div>
-          <p class="note"><strong>Mẹo:</strong> đối chiếu với ảnh hóa đơn bên trái để nhập dữ liệu vào từng ô, đặc biệt cột 品名 (Tên sản phẩm) và 规格 (Quy cách). Dùng nút phóng to/thu nhỏ để xem rõ hơn.</p>
+          <p class="note"><strong>Mẹo:</strong> một ảnh hóa đơn có thể có nhiều mã đơn hàng, thậm chí nhiều ngày. Thêm ngày trước, trong mỗi ngày thêm các mã đơn, và trong mỗi mã đơn thêm dòng sản phẩm tương ứng — đối chiếu với ảnh bên trái, đặc biệt cột 品名 (Tên sản phẩm) và 规格 (Quy cách).</p>
         </div>
       </div>
 
-      <!-- Tab: Export -->
+      <!-- Tab: Export (one Excel file per date, orders sharing a date are merged into it) -->
       <div class="img-tab-content hidden" id="tabExport">
         <div class="card">
           <h2>Xuất Excel</h2>
+          <ul class="batch-list" id="imgOutputList"></ul>
           <div class="row-actions">
-            <button class="plain" id="previewBtnImg">👁 Xem trước</button>
-            <button class="primary" id="imgExportBtn">⬇ Xuất file Excel</button>
+            <button class="plain" id="imgDownloadAllBtn">⬇ Tải tất cả</button>
           </div>
           <div class="status" id="imgExportStatus"></div>
-          <p class="note">File xuất ra tuân theo mẫu chuẩn của công ty, sẵn sàng gửi đi hoặc lưu trữ.</p>
+          <p class="note">Mỗi ngày xuất thành 1 file Excel riêng, theo đúng mẫu chuẩn của công ty; các mã đơn cùng ngày được gộp vào cùng file, mã đơn trùng sẽ tự loại bỏ.</p>
         </div>
       </div>
     </div>
@@ -625,27 +622,7 @@ async function handleBatchFiles(files){
     });
   });
 
-  const groupsByDate = new Map();
-  parsedOrders.forEach(p => {
-    const ymd = computeYmd(p.orderDate);
-    if (!groupsByDate.has(ymd)) groupsByDate.set(ymd, []);
-    groupsByDate.get(ymd).push(p);
-  });
-
-  // Same date + same order number = duplicate data — keep the first, mark the rest skipped.
-  groupsByDate.forEach((orders, ymd) => {
-    const seen = new Set();
-    const deduped = [];
-    orders.forEach(o => {
-      if (o.orderNo && seen.has(o.orderNo)){
-        o._duplicate = true;
-      } else {
-        if (o.orderNo) seen.add(o.orderNo);
-        deduped.push(o);
-      }
-    });
-    groupsByDate.set(ymd, deduped);
-  });
+  const outputs = groupIntoOutputs(parsedOrders);
 
   // Render each file's final status line(s) now that we know which of its entries survived.
   fileRecords.forEach(rec => {
@@ -667,54 +644,14 @@ async function handleBatchFiles(files){
     rec.li.innerHTML = `<span class="batch-item-label">📄 ${escapeHtml(rec.file.name)} — ${escapeHtml(parts.join('; '))}</span>`;
   });
 
-  const outputs = [...groupsByDate.entries()]
-    .filter(([, orders]) => orders.length > 0)
-    .map(([ymd, orders]) => ({
-      ymd,
-      filename: `${ymd}_采购订单.xlsx`,
-      header: buildBatchHeader(orders[0]),
-      orderGroups: orders.map(o => ({ orderNo: o.orderNo, rows: o.rows })),
-    }));
-
   if (outputs.length === 0){
     statusEl.textContent = 'Không đọc được đơn hàng hợp lệ nào từ các file đã chọn.';
     batchStatus.textContent = 'Không có dữ liệu để xuất.';
     return;
   }
 
-  outputs.forEach(out => {
-    const totalRows = out.orderGroups.reduce((n,g) => n + g.rows.length, 0);
-    const li = document.createElement('li');
-    const label = document.createElement('span');
-    label.className = 'batch-item-label';
-    label.textContent = `📊 ${out.filename} — ${out.orderGroups.length} đơn hàng, ${totalRows} dòng sản phẩm`;
-    const actions = document.createElement('span');
-    actions.className = 'batch-item-actions';
-    const previewBtn = document.createElement('button');
-    previewBtn.className = 'plain';
-    previewBtn.textContent = '👁 Xem trước';
-    previewBtn.onclick = () => showPreview(out.header, out.orderGroups, out.filename);
-    const downloadBtn = document.createElement('button');
-    downloadBtn.className = 'plain';
-    downloadBtn.textContent = '⬇ Tải xuống';
-    downloadBtn.onclick = async () => {
-      const buf = await buildOrderWorkbook(out.header, out.orderGroups);
-      downloadWorkbook(batchStatus, buf, out.filename);
-    };
-    actions.appendChild(previewBtn);
-    actions.appendChild(downloadBtn);
-    li.appendChild(label);
-    li.appendChild(actions);
-    outputList.appendChild(li);
-  });
-
-  document.getElementById('batchDownloadAllBtn').onclick = async () => {
-    for (const out of outputs){
-      const buf = await buildOrderWorkbook(out.header, out.orderGroups);
-      downloadWorkbook(batchStatus, buf, out.filename);
-      await new Promise(r => setTimeout(r, 300));
-    }
-  };
+  renderOutputList(outputList, batchStatus, outputs);
+  document.getElementById('batchDownloadAllBtn').onclick = downloadAllOutputs(batchStatus, outputs);
 
   statusEl.textContent = `Đã đọc ${eligibleFiles.length} file — gộp thành ${outputs.length} file Excel theo ngày.`;
 }
@@ -732,6 +669,85 @@ function buildBatchHeader(sampleOrder){
 
 function singleGroup(header, rows){
   return [{ orderNo: header.orderNo, rows }];
+}
+
+/* ====== Shared: group flat order entries by date, drop same-date/same-order-number
+   duplicates (keeping the first), and pack each date into one output file. Mutates
+   each entry with `_duplicate` when dropped, so callers can flag it in their own UI. ====== */
+
+function groupIntoOutputs(parsedOrders, headerBase){
+  headerBase = headerBase || {};
+  const groupsByDate = new Map();
+  parsedOrders.forEach(p => {
+    const ymd = computeYmd(p.orderDate);
+    if (!groupsByDate.has(ymd)) groupsByDate.set(ymd, []);
+    groupsByDate.get(ymd).push(p);
+  });
+
+  groupsByDate.forEach((orders, ymd) => {
+    const seen = new Set();
+    const deduped = [];
+    orders.forEach(o => {
+      if (o.orderNo && seen.has(o.orderNo)){
+        o._duplicate = true;
+      } else {
+        if (o.orderNo) seen.add(o.orderNo);
+        deduped.push(o);
+      }
+    });
+    groupsByDate.set(ymd, deduped);
+  });
+
+  return [...groupsByDate.entries()]
+    .filter(([, orders]) => orders.length > 0)
+    .map(([ymd, orders]) => ({
+      ymd,
+      filename: filenameForDate(orders[0].orderDate),
+      header: buildBatchHeader({ ...headerBase, ...orders[0] }),
+      orderGroups: orders.map(o => ({ orderNo: o.orderNo, rows: o.rows })),
+    }));
+}
+
+/* ====== Shared: render a list of output files (one per date) with preview/download actions.
+   Used by both the multi-file batch mode and the image mode's nested date/order entry. ====== */
+
+function renderOutputList(outputList, statusEl, outputs){
+  outputList.innerHTML = '';
+  outputs.forEach(out => {
+    const totalRows = out.orderGroups.reduce((n,g) => n + g.rows.length, 0);
+    const li = document.createElement('li');
+    const label = document.createElement('span');
+    label.className = 'batch-item-label';
+    label.textContent = `📊 ${out.filename} — ${out.orderGroups.length} đơn hàng, ${totalRows} dòng sản phẩm`;
+    const actions = document.createElement('span');
+    actions.className = 'batch-item-actions';
+    const previewBtn = document.createElement('button');
+    previewBtn.className = 'plain';
+    previewBtn.textContent = '👁 Xem trước';
+    previewBtn.onclick = () => showPreview(out.header, out.orderGroups, out.filename);
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'plain';
+    downloadBtn.textContent = '⬇ Tải xuống';
+    downloadBtn.onclick = async () => {
+      const buf = await buildOrderWorkbook(out.header, out.orderGroups);
+      downloadWorkbook(statusEl, buf, out.filename);
+    };
+    actions.appendChild(previewBtn);
+    actions.appendChild(downloadBtn);
+    li.appendChild(label);
+    li.appendChild(actions);
+    outputList.appendChild(li);
+  });
+}
+
+function downloadAllOutputs(statusEl, outputs){
+  return async () => {
+    for (const out of outputs){
+      const buf = await buildOrderWorkbook(out.header, out.orderGroups);
+      downloadWorkbook(statusEl, buf, out.filename);
+      await new Promise(r => setTimeout(r, 300));
+    }
+  };
 }
 
 /* ====== IMAGE MODE ====== */
@@ -830,12 +846,9 @@ function fillImageDefaults(){
   document.getElementById('imgContact').value = DEFAULT_HEADER.contact;
   document.getElementById('imgAddress').value = DEFAULT_HEADER.address;
   document.getElementById('imgCustomer').value = '';
-  document.getElementById('imgDate').value = '';
-  document.getElementById('imgOrderNo').value = '';
-  // clear product table and add one empty row
-  const imgBody = document.getElementById('imgItemsBody');
-  imgBody.innerHTML = '';
-  addImgItemRow();
+  // reset the nested date/order/product entry to one empty date with one empty order
+  imgDatesContainer.innerHTML = '';
+  addImgDateBlock();
 }
 
 // Tabs
@@ -847,31 +860,129 @@ document.querySelectorAll('.img-tab').forEach(tab => {
     document.getElementById('tabInfo').classList.toggle('hidden', target !== 'info');
     document.getElementById('tabProducts').classList.toggle('hidden', target !== 'products');
     document.getElementById('tabExport').classList.toggle('hidden', target !== 'export');
+    if (target === 'export') refreshImageOutputs();
   });
 });
 
-// Image product table (same 6-column format as PDF mode)
-const imgItemsBody = document.getElementById('imgItemsBody');
-const imgItemCount = document.getElementById('imgItemCount');
+/* ====== Image mode: nested entry — one or more dates, each with one or more order
+   codes, each with its own product rows. Mirrors the shape used for batch mode so
+   both can share groupIntoOutputs / renderOutputList / downloadAllOutputs. ====== */
 
-function addImgItemRow(data){
-  imgItemsBody.appendChild(createItemRow(data, () => updateImgCount()));
-  updateImgCount();
+const imgDatesContainer = document.getElementById('imgDatesContainer');
+
+function addImgDateBlock(data){
+  data = data || { orderDate: '', orders: [null] };
+  const block = document.createElement('div');
+  block.className = 'date-block';
+  block.innerHTML = `
+    <div class="date-block-head">
+      <span class="block-label">📅 Ngày đặt hàng</span>
+      <input type="text" class="date-input" placeholder="yyyy.mm.dd">
+      <button class="del-btn" title="Xóa ngày này">✕</button>
+    </div>
+    <div class="order-list"></div>
+    <button class="plain small-btn add-order-btn">+ Thêm mã đơn</button>
+  `;
+  block.querySelector('.date-input').value = data.orderDate || '';
+  block.querySelector('.del-btn').onclick = () => block.remove();
+  const orderList = block.querySelector('.order-list');
+  block.querySelector('.add-order-btn').onclick = () => addImgOrderBlock(orderList);
+  imgDatesContainer.appendChild(block);
+
+  (data.orders && data.orders.length ? data.orders : [null]).forEach(o => addImgOrderBlock(orderList, o));
+  return block;
 }
 
-function updateImgCount(){
-  imgItemCount.textContent = imgItemsBody.children.length + ' dòng';
+function addImgOrderBlock(orderListEl, data){
+  data = data || { orderNo: '', rows: [null] };
+  const block = document.createElement('div');
+  block.className = 'order-block';
+  block.innerHTML = `
+    <div class="order-block-head">
+      <span class="block-label">🏷️ Số đơn hàng</span>
+      <input type="text" class="order-input">
+      <button class="del-btn" title="Xóa mã đơn này">✕</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="items">
+        <thead>
+          <tr>
+            <th style="width:14%">物料代码<span class="th-sub">Mã hàng</span></th>
+            <th style="width:20%">品名<span class="th-sub">Tên sản phẩm</span></th>
+            <th style="width:34%">规格<span class="th-sub">Quy cách</span></th>
+            <th style="width:8%">数量<span class="th-sub">Số lượng</span></th>
+            <th style="width:8%">单位<span class="th-sub">Đơn vị</span></th>
+            <th style="width:10%">备注<span class="th-sub">Ghi chú</span></th>
+            <th class="col-del"></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <button class="plain small-btn add-product-btn">+ Thêm sản phẩm</button>
+  `;
+  block.querySelector('.order-input').value = data.orderNo || '';
+  block.querySelector('.del-btn').onclick = () => block.remove();
+  const tbody = block.querySelector('tbody');
+  const addRow = (rowData) => tbody.appendChild(createItemRow(rowData, () => {}));
+  block.querySelector('.add-product-btn').onclick = () => addRow();
+  orderListEl.appendChild(block);
+
+  (data.rows && data.rows.length ? data.rows : [null]).forEach(r => addRow(r));
+  return block;
 }
 
-document.getElementById('imgAddRow').addEventListener('click', () => addImgItemRow());
+document.getElementById('imgAddDateBtn').addEventListener('click', () => addImgDateBlock());
 
-document.getElementById('imgExportBtn').addEventListener('click', () => {
-  runExport(document.getElementById('imgExportStatus'), gatherOrderData('img'), gatherRows(imgItemsBody));
-});
-document.getElementById('previewBtnImg').addEventListener('click', () => {
+// Reads every date -> order -> product row currently entered, flattened into the
+// same per-order shape parsePdfFile/parseExcelFile produce (plus a DOM back-reference
+// so duplicate order numbers can be flagged visually where they were typed).
+function gatherImageOrders(){
+  const orders = [];
+  imgDatesContainer.querySelectorAll('.date-block').forEach(dateBlock => {
+    const orderDate = dateBlock.querySelector('.date-input').value;
+    dateBlock.querySelectorAll('.order-block').forEach(orderBlock => {
+      const orderNo = orderBlock.querySelector('.order-input').value;
+      const rows = gatherRows(orderBlock.querySelector('tbody'));
+      if (rows.length > 0) orders.push({ orderDate, orderNo, rows, _el: orderBlock });
+    });
+  });
+  return orders;
+}
+
+function refreshImageOutputs(){
+  const exportStatus = document.getElementById('imgExportStatus');
+  const outputList = document.getElementById('imgOutputList');
+
+  document.querySelectorAll('.order-block').forEach(el => {
+    el.classList.remove('order-block-duplicate');
+    const warn = el.querySelector('.dup-warning');
+    if (warn) warn.remove();
+  });
+
   const header = gatherOrderData('img');
-  showPreview(header, singleGroup(header, gatherRows(imgItemsBody)), filenameForDate(header.orderDate));
-});
+  const orders = gatherImageOrders();
+  const outputs = groupIntoOutputs(orders, header);
+
+  orders.forEach(o => {
+    if (!o._duplicate || !o._el) return;
+    o._el.classList.add('order-block-duplicate');
+    const warn = document.createElement('div');
+    warn.className = 'dup-warning';
+    warn.textContent = `⚠ Trùng mã đơn "${o.orderNo}" với mã đơn khác cùng ngày — sẽ bị bỏ qua khi xuất Excel.`;
+    o._el.insertBefore(warn, o._el.firstChild);
+  });
+
+  if (outputs.length === 0){
+    outputList.innerHTML = '';
+    exportStatus.textContent = 'Chưa có dòng sản phẩm nào để xuất.';
+    return;
+  }
+
+  exportStatus.textContent = '';
+  renderOutputList(outputList, exportStatus, outputs);
+  document.getElementById('imgDownloadAllBtn').onclick = downloadAllOutputs(exportStatus, outputs);
+}
 
 /* ====== PDF MODE (existing logic) ====== */
 
@@ -1179,14 +1290,15 @@ document.getElementById('previewBtnPdf').addEventListener('click', () => {
 /* ====== Shared: read form data / rows (used by both PDF and image mode) ====== */
 
 function gatherOrderData(prefix){
+  const val = (suffix) => { const el = document.getElementById(prefix+suffix); return el ? el.value : ''; };
   return {
-    company: document.getElementById(prefix+'Company').value,
-    phoneLine: document.getElementById(prefix+'PhoneLine').value,
-    customer: document.getElementById(prefix+'Customer').value,
-    address: document.getElementById(prefix+'Address').value,
-    orderDate: document.getElementById(prefix+'Date').value,
-    orderNo: document.getElementById(prefix+'OrderNo').value,
-    contact: document.getElementById(prefix+'Contact').value
+    company: val('Company'),
+    phoneLine: val('PhoneLine'),
+    customer: val('Customer'),
+    address: val('Address'),
+    orderDate: val('Date'),
+    orderNo: val('OrderNo'),
+    contact: val('Contact')
   };
 }
 
