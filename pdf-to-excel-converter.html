@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chuyển PDF đơn hàng → Excel</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+  :root{
+    --ink:#1f2430; --paper:#fbfaf7; --line:#dcd6c8; --accent:#a6412e;
+    --accent-soft:#f4e6df; --muted:#6b6558;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:"Segoe UI",Roboto,"Noto Sans SC",sans-serif;
+    background:var(--paper); color:var(--ink); padding:24px 16px 60px;
+  }
+  .wrap{max-width:880px;margin:0 auto;}
+  h1{font-size:1.35rem;margin:0 0 4px;}
+  .sub{color:var(--muted);font-size:.92rem;margin:0 0 22px;}
+  .card{
+    background:#fff;border:1px solid var(--line);border-radius:10px;
+    padding:18px;margin-bottom:16px;
+  }
+  .card h2{font-size:1rem;margin:0 0 12px;color:var(--accent);}
+  .drop{
+    border:2px dashed var(--line);border-radius:8px;padding:26px;text-align:center;
+    cursor:pointer;transition:.15s; font-size:.92rem;
+  }
+  .drop.drag{border-color:var(--accent);background:var(--accent-soft);}
+  .drop b{color:var(--accent);}
+  input[type=file]{display:none;}
+  .status{font-size:.85rem;color:var(--muted);margin-top:10px;min-height:1.2em;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;}
+  label{display:block;font-size:.78rem;color:var(--muted);margin:8px 0 3px;}
+  input[type=text]{
+    width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;
+    font-size:.92rem;font-family:inherit;
+  }
+  table.items{width:100%;border-collapse:collapse;margin-top:6px;font-size:.85rem;}
+  table.items th{background:#f5f2ea;font-weight:600;text-align:left;padding:6px 6px;border:1px solid var(--line);font-size:.76rem;color:var(--muted);}
+  table.items td{border:1px solid var(--line);padding:3px;vertical-align:top;}
+  table.items td input{border:none;padding:5px 6px;width:100%;font-size:.85rem;}
+  table.items td input:focus{outline:2px solid var(--accent-soft);background:#fffef9;}
+  .col-del{width:34px;text-align:center;}
+  .del-btn{background:none;border:none;color:#b3492f;cursor:pointer;font-size:1rem;}
+  .row-actions{margin-top:10px;display:flex;gap:8px;}
+  button.plain{
+    background:#fff;border:1px solid var(--line);border-radius:6px;padding:7px 12px;
+    font-size:.85rem;cursor:pointer;color:var(--ink);
+  }
+  button.plain:hover{border-color:var(--accent);}
+  .primary{
+    background:var(--accent);color:#fff;border:none;border-radius:7px;
+    padding:11px 20px;font-size:.95rem;cursor:pointer;font-weight:600;
+  }
+  .primary:disabled{opacity:.45;cursor:not-allowed;}
+  .primary:hover:not(:disabled){background:#8a3524;}
+  .note{font-size:.78rem;color:var(--muted);margin-top:10px;line-height:1.5;}
+  .hidden{display:none;}
+  .badge{display:inline-block;background:var(--accent-soft);color:var(--accent);font-size:.72rem;padding:2px 8px;border-radius:10px;margin-left:6px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Chuyển đơn hàng PDF → Excel (theo mẫu)</h1>
+  <p class="sub">Tải PDF đơn đặt hàng lên, kiểm tra/sửa dữ liệu trích xuất, rồi xuất ra file Excel đúng định dạng mẫu.</p>
+
+  <div class="card">
+    <h2>1. Tải file PDF</h2>
+    <div class="drop" id="dropZone">
+      <div>📄 Kéo thả file PDF vào đây, hoặc <b>bấm để chọn file</b></div>
+      <input type="file" id="fileInput" accept="application/pdf">
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="card hidden" id="headerCard">
+    <h2>2. Thông tin tiêu đề (mẫu công ty phát hành)</h2>
+    <div class="grid2">
+      <div>
+        <label>Tên công ty (dòng 1)</label>
+        <input type="text" id="hCompany">
+      </div>
+      <div>
+        <label>Điện thoại / người liên hệ (dòng 2)</label>
+        <input type="text" id="hPhoneLine">
+      </div>
+      <div>
+        <label>Khách hàng (客户)</label>
+        <input type="text" id="hCustomer">
+      </div>
+      <div>
+        <label>Địa chỉ giao hàng (送货地址)</label>
+        <input type="text" id="hAddress">
+      </div>
+      <div>
+        <label>Ngày đặt hàng (订单日期)</label>
+        <input type="text" id="hDate" placeholder="2026.08.28">
+      </div>
+      <div>
+        <label>Số đơn hàng (订单号)</label>
+        <input type="text" id="hOrderNo">
+      </div>
+      <div>
+        <label>Người liên hệ cuối trang (联系人)</label>
+        <input type="text" id="hContact">
+      </div>
+    </div>
+  </div>
+
+  <div class="card hidden" id="itemsCard">
+    <h2>3. Danh sách sản phẩm <span class="badge" id="itemCount">0 dòng</span></h2>
+    <table class="items">
+      <thead>
+        <tr>
+          <th style="width:14%">物料代码</th>
+          <th style="width:20%">品名</th>
+          <th style="width:34%">规格</th>
+          <th style="width:8%">数量</th>
+          <th style="width:8%">单位</th>
+          <th style="width:10%">备注</th>
+          <th class="col-del"></th>
+        </tr>
+      </thead>
+      <tbody id="itemsBody"></tbody>
+    </table>
+    <div class="row-actions">
+      <button class="plain" id="addRow">+ Thêm dòng</button>
+    </div>
+    <p class="note">Dữ liệu được trích tự động từ layout bảng trong PDF — vì mỗi PDF có thể trình bày khác nhau, hãy kiểm tra lại từng ô trước khi xuất file, đặc biệt là cột 品名/规格.</p>
+  </div>
+
+  <div class="card hidden" id="exportCard">
+    <h2>4. Xuất Excel</h2>
+    <button class="primary" id="exportBtn">⬇ Xuất file Excel theo mẫu</button>
+    <div class="status" id="exportStatus"></div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const statusEl = document.getElementById('status');
+const itemsBody = document.getElementById('itemsBody');
+const itemCount = document.getElementById('itemCount');
+
+dropZone.addEventListener('click', () => fileInput.click());
+['dragenter','dragover'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('drag'); }));
+dropZone.addEventListener('drop', e => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+async function handleFile(file){
+  if (file.type !== 'application/pdf'){ statusEl.textContent = 'Vui lòng chọn file PDF.'; return; }
+  statusEl.textContent = 'Đang đọc PDF…';
+  try{
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    let items = [];
+    for (let p = 1; p <= pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      content.items.forEach(it => {
+        if (it.str.trim() !== '') items.push({str: it.str, x: it.transform[4], y: it.transform[5], width: it.width || 0, page: p});
+      });
+    }
+    const lines = groupLines(items);
+    const fullText = lines.map(l => l.items.map(i => i.str).join('')).join('\n');
+    const parsed = parseHeader(fullText);
+    const columnEdges = await extractColumnEdges(pdf);
+    const rows = parseTable(lines, columnEdges);
+    fillHeader(parsed);
+    fillTable(rows);
+    document.getElementById('headerCard').classList.remove('hidden');
+    document.getElementById('itemsCard').classList.remove('hidden');
+    document.getElementById('exportCard').classList.remove('hidden');
+    statusEl.textContent = `Đã đọc xong "${file.name}" — ${rows.length} dòng sản phẩm. `
+      + (columnEdges ? `Đã dò được khung bảng (${columnEdges.length} vạch cột).` : 'Không thấy khung bảng, dùng chế độ dò theo vị trí chữ.')
+      + ' [v4]';
+  }catch(err){
+    console.error(err);
+    statusEl.textContent = 'Không đọc được PDF: ' + err.message;
+  }
+}
+
+function groupLines(items){
+  const sorted = [...items].sort((a,b) => a.page - b.page || b.y - a.y);
+  const lines = [];
+  let cur = null;
+  for (const it of sorted){
+    if (cur && it.page === cur.page && Math.abs(it.y - cur.y) < 3){
+      cur.items.push(it);
+    } else {
+      cur = { page: it.page, y: it.y, items: [it] };
+      lines.push(cur);
+    }
+  }
+  lines.forEach(l => l.items.sort((a,b) => a.x - b.x));
+  return lines;
+}
+
+function parseHeader(fullText){
+  const grab = (re) => { const m = fullText.match(re); return m ? m[1].trim() : ''; };
+  const orderNo = grab(/订单编码[：:]\s*([A-Za-z0-9\-]+)/);
+  const customer = grab(/甲方[：:]\s*(.+?)(?=订单编码|联系人|电话|$)/);
+  const address = grab(/交货地点[：:]\s*(.+?)(?=包装与标识要求|$)/);
+  let date = grab(/日期[：:]\s*(\d{4}\/\d{1,2}\/\d{1,2})/);
+  if (date){
+    const [y,m,d] = date.split('/');
+    date = `${y}.${m.padStart(2,'0')}.${d.padStart(2,'0')}`;
+  }
+  return { orderNo, customer, address, date };
+}
+
+function charMapWithSpans(line){
+  // like charMap, but also records each item's [start,end) character range in the line text
+  let text = '', spans = [];
+  line.items.forEach(it => {
+    const start = text.length;
+    text += it.str;
+    spans.push({ item: it, start, end: text.length });
+  });
+  return { text, spans, y: line.y };
+}
+
+async function extractColumnEdges(pdf){
+  // Read the table's own drawn cell rectangles (vector borders) to recover the
+  // exact column boundaries, instead of inferring them from where text happens to sit.
+  const OPS = pdfjsLib.OPS;
+  const rects = [];
+  for (let p = 1; p <= pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const opList = await page.getOperatorList();
+    let ctm = [1,0,0,1,0,0];
+    const stack = [];
+    const mul = (m, n) => [
+      m[0]*n[0] + m[2]*n[1], m[1]*n[0] + m[3]*n[1],
+      m[0]*n[2] + m[2]*n[3], m[1]*n[2] + m[3]*n[3],
+      m[0]*n[4] + m[2]*n[5] + m[4], m[1]*n[4] + m[3]*n[5] + m[5]
+    ];
+    for (let i = 0; i < opList.fnArray.length; i++){
+      const fn = opList.fnArray[i], args = opList.argsArray[i];
+      if (fn === OPS.save){ stack.push(ctm.slice()); }
+      else if (fn === OPS.restore){ ctm = stack.pop() || [1,0,0,1,0,0]; }
+      else if (fn === OPS.transform){ ctm = mul(ctm, args); }
+      else if (fn === OPS.constructPath){
+        const pathOps = args[0], coords = args[1];
+        let c = 0;
+        for (const op of pathOps){
+          if (op === OPS.rectangle){
+            const x = coords[c], y = coords[c+1], w = coords[c+2], h = coords[c+3];
+            // apply current transform to the rect's two corners
+            const tx = (px,py) => [ctm[0]*px + ctm[2]*py + ctm[4], ctm[1]*px + ctm[3]*py + ctm[5]];
+            const [x1,y1] = tx(x, y), [x2,y2] = tx(x + w, y + h);
+            rects.push({
+              left: Math.min(x1,x2), right: Math.max(x1,x2),
+              bottom: Math.min(y1,y2), top: Math.max(y1,y2)
+            });
+            c += 4;
+          } else if (op === OPS.moveTo || op === OPS.lineTo){ c += 2; }
+          else if (op === OPS.curveTo){ c += 6; }
+          else if (op === OPS.curveTo2 || op === OPS.curveTo3){ c += 4; }
+        }
+      }
+    }
+  }
+  // keep plausible table cells: not the page frame, not hairlines
+  const cells = rects.filter(r => {
+    const w = r.right - r.left, h = r.top - r.bottom;
+    return w > 10 && w < 400 && h > 3 && h < 200;
+  });
+  if (cells.length < 3) return null;
+
+  // cluster the vertical edges
+  const raw = [];
+  cells.forEach(r => { raw.push(r.left); raw.push(r.right); });
+  raw.sort((a,b) => a - b);
+  const edges = [];
+  raw.forEach(v => {
+    if (!edges.length || v - edges[edges.length-1] > 2) edges.push(v);
+    else edges[edges.length-1] = (edges[edges.length-1] + v) / 2;
+  });
+  return edges.length >= 4 ? edges : null;
+}
+
+function findColumnSplit(intervals){
+  // Fallback used only when the PDF has no drawn table borders.
+  // Merge overlapping [left, right] text intervals into continuous bands; a real
+  // column boundary is a gap that no text run crosses. Using each run's full width
+  // (not just its start x) prevents an incidental gap inside a column from winning.
+  const sorted = [...intervals].sort((a,b) => a[0] - b[0]);
+  const merged = [];
+  sorted.forEach(([l, r]) => {
+    const last = merged[merged.length - 1];
+    if (last && l <= last[1] + 0.5) last[1] = Math.max(last[1], r);
+    else merged.push([l, r]);
+  });
+  if (merged.length < 2) return null;
+  let bestGap = -1, split = null;
+  for (let i = 1; i < merged.length; i++){
+    const gap = merged[i][0] - merged[i-1][1];
+    if (gap > bestGap){ bestGap = gap; split = (merged[i-1][1] + merged[i][0]) / 2; }
+  }
+  return split;
+}
+
+function normalizeUnit(u){
+  const s = (u || '').trim();
+  if (!s) return 'PCS';
+  // the target template records piece counts as PCS, whatever wording the PDF uses
+  if (/^(个|件|只|张|块|条|支|PCS|pcs|Pcs)$/.test(s)) return 'PCS';
+  return s;
+}
+
+function parseTable(lines, columnEdges){
+  const headerLineIdx = lines.findIndex(l => {
+    const t = l.items.map(i=>i.str).join('');
+    return t.includes('产品编号') && t.includes('名称') && t.includes('规格型号');
+  });
+  if (headerLineIdx === -1) return [];
+  const headerLine = lines[headerLineIdx];
+
+  const endIdx = lines.findIndex((l,i) => i > headerLineIdx && l.items.map(x=>x.str).join('').includes('合计'));
+  const bodyLines = lines.slice(headerLineIdx + 1, endIdx === -1 ? lines.length : endIdx);
+
+  const codeRe = /\d{3}-\d{3,4}-\d{3,4}-\d/;
+
+  // --- locate the rows via the product-code column ---
+  const anchors = bodyLines
+    .map(l => ({ line: l, m: charMapWithSpans(l).text.match(codeRe) }))
+    .filter(a => a.m)
+    .map(a => ({ y: a.line.y, code: a.m[0] }));
+  if (anchors.length === 0) return [];
+
+  // Bound the first row symmetrically instead of leaving it open-ended, so leftover
+  // header fragments (序/号, 单价/（元）stacked on separate lines) can't fall into row 1.
+  const spacing = anchors.length > 1 ? Math.abs(anchors[0].y - anchors[1].y) : 20;
+  const rows = anchors.map((a, i) => ({
+    code: a.code, y: a.y,
+    top: i === 0 ? a.y + spacing / 2 : (anchors[i-1].y + a.y) / 2,
+    bottom: i === anchors.length - 1 ? a.y - spacing / 2 : (a.y + anchors[i+1].y) / 2,
+    cells: {}
+  }));
+
+  // --- build the column grid ---
+  const edges = (columnEdges && columnEdges.length >= 4) ? columnEdges : null;
+  const colOf = (item) => {
+    if (!edges) return null;
+    const cx = item.x + (item.width || 0) / 2;
+    for (let i = 0; i < edges.length - 1; i++){
+      if (cx >= edges[i] && cx < edges[i+1]) return i;
+    }
+    return null; // outside the table grid entirely
+  };
+
+  // --- work out what each column means, from the header labels ---
+  const roleOf = {};
+  if (edges){
+    headerLine.items.forEach(it => {
+      const c = colOf(it);
+      if (c === null) return;
+      const s = it.str;
+      if (s.includes('产品编号') || s.includes('物料')) roleOf[c] = 'code';
+      else if (s.includes('名称') || s.includes('品名')) roleOf[c] = 'name';
+      else if (s.includes('规格')) roleOf[c] = 'spec';
+      else if (s.includes('数量')) roleOf[c] = 'qty';
+      else if (s.includes('单位')) roleOf[c] = 'unit';
+      else if (s.includes('备注')) roleOf[c] = 'remark';
+    });
+  }
+
+  const hasGrid = edges && Object.values(roleOf).includes('name') && Object.values(roleOf).includes('spec');
+
+  if (hasGrid){
+    // Assign every body text run to its cell using the drawn column grid.
+    bodyLines.forEach(l => {
+      const row = rows.find(r => l.y <= r.top && l.y >= r.bottom);
+      if (!row) return; // above the first row (header remnants) or below the last
+      l.items.forEach(it => {
+        const c = colOf(it);
+        const role = roleOf[c];
+        if (!role || role === 'code') return;
+        (row.cells[role] = row.cells[role] || []).push(it);
+      });
+    });
+
+    const join = (parts) => (parts || [])
+      .sort((a,b) => b.y - a.y || a.x - b.x)
+      .map(p => p.str).join('');
+
+    return rows.sort((a,b) => b.y - a.y).map(r => ({
+      code: r.code,
+      name: join(r.cells.name),
+      spec: join(r.cells.spec),
+      qty: join(r.cells.qty).replace(/[^\d]/g, ''),
+      unit: normalizeUnit(join(r.cells.unit)),
+      remark: join(r.cells.remark).trim()
+    }));
+  }
+
+  // --- fallback for PDFs with no drawn table borders ---
+  const qtyRe = /(\d[\d,]*)\s*(PCS|pcs|个|件|套|盒|张|包|条)[\s\S]{0,20}?(\d{4}\/\d{1,2}\/\d{1,2})/;
+  const overlaps = (span, ranges) => ranges.some(([s,e]) => span.start < e && span.end > s);
+
+  bodyLines.forEach(l => {
+    const cm = charMapWithSpans(l);
+    const row = rows.find(r => l.y <= r.top && l.y >= r.bottom);
+    if (!row) return;
+    const codeMatch = cm.text.match(codeRe);
+    const consumed = [];
+    if (codeMatch){
+      consumed.push([0, codeMatch.index + codeMatch[0].length]);
+      const qm = cm.text.match(qtyRe);
+      if (qm){
+        row.qty = qm[1].replace(/,/g,'');
+        row.unit = qm[2];
+        consumed.push([qm.index, qm.index + qm[0].length]);
+      }
+    }
+    cm.spans.forEach(span => {
+      if (overlaps(span, consumed)) return;
+      if (!span.item.str.trim()) return;
+      (row.contentItems = row.contentItems || []).push(span.item);
+    });
+  });
+
+  const intervals = rows.flatMap(r => (r.contentItems || []).map(it => [it.x, it.x + (it.width || 0)]));
+  const split = findColumnSplit(intervals);
+  const bound = split !== null ? split : 1e9;
+  const join = (parts) => parts.sort((a,b) => b.y - a.y || a.x - b.x).map(p => p.str).join('');
+
+  return rows.sort((a,b) => b.y - a.y).map(r => {
+    const items = r.contentItems || [];
+    return {
+      code: r.code,
+      name: join(items.filter(it => it.x < bound)),
+      spec: join(items.filter(it => it.x >= bound)),
+      qty: r.qty || '',
+      unit: normalizeUnit(r.unit),
+      remark: ''
+    };
+  });
+}
+
+function fillHeader(p){
+  document.getElementById('hCompany').value = '东莞市西南纸品装有限公司';
+  document.getElementById('hPhoneLine').value = '电话：刘生13923899278';
+  document.getElementById('hContact').value = '联系人：刘生';
+  document.getElementById('hCustomer').value = p.customer || '';
+  // the PDF's 交货地点 line carries the recipient's name and phone and is worded
+  // differently from the standing delivery address, so default to the fixed one
+  document.getElementById('hAddress').value = '宝安区石岩料坑大道26号百利恒泰207';
+  document.getElementById('hDate').value = p.date || '';
+  document.getElementById('hOrderNo').value = p.orderNo || '';
+}
+
+function addItemRow(data){
+  data = data || { code:'', name:'', spec:'', qty:'', unit:'PCS', remark:'' };
+  const tr = document.createElement('tr');
+  const fields = ['code','name','spec','qty','unit','remark'];
+  fields.forEach(f => {
+    const td = document.createElement('td');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.dataset.field = f;
+    input.value = data[f] || '';
+    td.appendChild(input);
+    tr.appendChild(td);
+  });
+  const tdDel = document.createElement('td');
+  tdDel.className = 'col-del';
+  const delBtn = document.createElement('button');
+  delBtn.className = 'del-btn';
+  delBtn.textContent = '✕';
+  delBtn.onclick = () => { tr.remove(); updateCount(); };
+  tdDel.appendChild(delBtn);
+  tr.appendChild(tdDel);
+  itemsBody.appendChild(tr);
+  updateCount();
+}
+
+function updateCount(){
+  itemCount.textContent = itemsBody.children.length + ' dòng';
+}
+
+function fillTable(rows){
+  itemsBody.innerHTML = '';
+  rows.forEach(r => addItemRow(r));
+  if (rows.length === 0) addItemRow();
+}
+
+document.getElementById('addRow').addEventListener('click', () => addItemRow());
+
+document.getElementById('exportBtn').addEventListener('click', exportExcel);
+
+async function exportExcel(){
+  const exportStatus = document.getElementById('exportStatus');
+  const rowsData = [...itemsBody.children].map(tr => {
+    const obj = {};
+    tr.querySelectorAll('input').forEach(inp => obj[inp.dataset.field] = inp.value);
+    return obj;
+  }).filter(r => r.code || r.name);
+
+  if (rowsData.length === 0){ exportStatus.textContent = 'Chưa có dòng sản phẩm nào.'; return; }
+
+  const company = document.getElementById('hCompany').value;
+  const phoneLine = document.getElementById('hPhoneLine').value;
+  const customer = document.getElementById('hCustomer').value;
+  const address = document.getElementById('hAddress').value;
+  const orderDate = document.getElementById('hDate').value;
+  const orderNo = document.getElementById('hOrderNo').value;
+  const contact = document.getElementById('hContact').value;
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('采购订单');
+  ws.columns = [
+    {width:13.25},{width:14.125},{width:19.375},{width:17.875},{width:44.75},{width:9},{width:5.125},{width:12}
+  ];
+
+  const thin = {style:'thin'};
+  const border = {top:thin,bottom:thin,left:thin,right:thin};
+  const centerC = {horizontal:'center', vertical:'center'};
+
+  const setRow = (rowIdx, text, opts) => {
+    ws.mergeCells(rowIdx,1,rowIdx,8);
+    const cell = ws.getCell(rowIdx,1);
+    cell.value = text;
+    cell.font = {name:'SimSun', size: opts.size||11, bold: opts.bold!==false};
+    cell.alignment = {horizontal: opts.align||'center', vertical:'center'};
+  };
+
+  setRow(1, company, {size:18});
+  setRow(2, phoneLine, {size:11});
+  setRow(3, '采购订单', {size:11});
+  setRow(4, '客户：' + customer + ' ', {size:11, align:'left'});
+  setRow(5, '送货地址：' + address, {size:11, align:'left'});
+
+  const headers = ['订单日期','订单号','物料代码','品名','规格','数量','单位','备注'];
+  headers.forEach((h,i) => {
+    const c = ws.getCell(7, i+1);
+    c.value = h;
+    c.font = {name:'SimSun', size:11, bold:true};
+    c.alignment = centerC;
+    c.border = border;
+  });
+
+  const startRow = 8;
+  rowsData.forEach((r, i) => {
+    const rowIdx = startRow + i;
+    const qtyNum = parseFloat(String(r.qty).replace(/[^\d.]/g, ''));
+    const rowVals = [orderDate, orderNo, r.code, r.name, r.spec, isNaN(qtyNum) ? '' : qtyNum, r.unit, r.remark];
+    rowVals.forEach((v, ci) => {
+      const c = ws.getCell(rowIdx, ci+1);
+      c.value = v;
+      c.border = border;
+      c.alignment = {horizontal:'center', vertical:'center', wrapText: (ci===3||ci===4)};
+      if (ci===0 || ci===1 || ci===2){ c.font = {name:'Times New Roman', size:11, bold:true}; }
+      else if (ci===5){ c.font = {name:'SimSun', size:11, bold:true}; }
+      else { c.font = {name:'SimSun', size:11, bold:false}; }
+    });
+  });
+  const endRow = startRow + rowsData.length - 1;
+  if (rowsData.length > 1){
+    ws.mergeCells(startRow,1,endRow,1);
+    ws.mergeCells(startRow,2,endRow,2);
+  }
+
+  const totalRow = endRow + 1;
+  ws.mergeCells(totalRow,1,totalRow,5);
+  const totalLabel = ws.getCell(totalRow,1);
+  totalLabel.value = '合计';
+  totalLabel.font = {name:'SimSun', size:11, bold:true};
+  totalLabel.alignment = {horizontal:'right', vertical:'center'};
+  totalLabel.border = border;
+  for (let c=2;c<=5;c++){ ws.getCell(totalRow,c).border = border; }
+
+  const sumCell = ws.getCell(totalRow,6);
+  const totalQty = rowsData.reduce((sum, r) => {
+    const n = parseFloat(String(r.qty).replace(/[^\d.]/g, ''));
+    return sum + (isNaN(n) ? 0 : n);
+  }, 0);
+  // include the computed result alongside the formula: viewers that don't recalculate
+  // on open (mobile spreadsheet apps, some previewers) would otherwise show a blank cell
+  sumCell.value = { formula: `SUM(F${startRow}:F${endRow})`, result: totalQty };
+  sumCell.font = {name:'Times New Roman', size:11, bold:true};
+  sumCell.alignment = {horizontal:'center', vertical:'center'};
+  sumCell.border = border;
+  ws.getCell(totalRow,7).border = border;
+  ws.getCell(totalRow,8).border = border;
+
+  const contactRow = totalRow + 2;
+  ws.getCell(contactRow,1).value = contact;
+  ws.getCell(contactRow,1).font = {name:'SimSun', size:11, bold:true};
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url = URL.createObjectURL(blob);
+  const ymd = (orderDate || '').replace(/[^\d]/g, '') || 'yyyymmdd';
+  const filename = `${ymd}_采购订单.xlsx`;
+
+  // Try an automatic click first (works on most desktop browsers)...
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  // ...but always also show a visible, tappable link, since many mobile
+  // in-app webviews silently block the programmatic click above.
+  exportStatus.innerHTML = '';
+  const msg = document.createElement('div');
+  msg.textContent = '✓ File đã sẵn sàng. Nếu không tự tải xuống, bấm vào link bên dưới:';
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.textContent = '⬇ ' + filename;
+  link.style.display = 'inline-block';
+  link.style.marginTop = '8px';
+  link.style.color = '#a6412e';
+  link.style.fontWeight = '600';
+  link.style.wordBreak = 'break-all';
+  link.target = '_blank';
+  link.rel = 'noopener';
+  exportStatus.appendChild(msg);
+  exportStatus.appendChild(link);
+}
+</script>
+</body>
+</html>
