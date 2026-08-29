@@ -3,35 +3,67 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chuyển PDF / Ảnh đơn hàng → Excel</title>
+<title>Công Cụ Hỗ Trợ Xử Lý Đơn Hàng</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%93%84</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style>
   :root{
     --ink:#1f2430; --paper:#fbfaf7; --line:#dcd6c8; --accent:#a6412e;
-    --accent-soft:#f4e6df; --muted:#6b6558;
+    --accent-soft:#f4e6df; --muted:#6b6558; --accent2:#c9694f;
+    --shadow:0 1px 3px rgba(31,36,48,.05), 0 8px 24px rgba(31,36,48,.05);
   }
   *{box-sizing:border-box;}
   body{
     margin:0; font-family:"Segoe UI",Roboto,"Noto Sans SC",sans-serif;
-    background:var(--paper); color:var(--ink); padding:24px 16px 60px;
+    background:var(--paper); color:var(--ink); padding:28px 16px 60px;
   }
   .wrap{max-width:880px;margin:0 auto;}
   .wrap.wide{max-width:1400px;}
-  h1{font-size:1.35rem;margin:0 0 4px;}
-  .sub{color:var(--muted);font-size:.92rem;margin:0 0 22px;}
+  .hero{display:flex;align-items:flex-start;gap:14px;margin-bottom:24px;}
+  .hero-icon{
+    flex:0 0 auto;width:46px;height:46px;border-radius:12px;
+    background:linear-gradient(135deg, var(--accent), var(--accent2));
+    display:flex;align-items:center;justify-content:center;font-size:1.4rem;
+    box-shadow:0 4px 14px rgba(166,65,46,.28);
+  }
+  h1{font-size:1.5rem;font-weight:700;margin:0 0 4px;letter-spacing:-.01em;}
+  .sub{color:var(--muted);font-size:.92rem;margin:0;line-height:1.55;max-width:620px;}
   .card{
-    background:#fff;border:1px solid var(--line);border-radius:10px;
-    padding:18px;margin-bottom:16px;
+    background:#fff;border:1px solid var(--line);border-radius:12px;
+    padding:20px;margin-bottom:16px;box-shadow:var(--shadow);
   }
   .card h2{font-size:1rem;margin:0 0 12px;color:var(--accent);}
-  .drop{
-    border:2px dashed var(--line);border-radius:8px;padding:26px;text-align:center;
-    cursor:pointer;transition:.15s; font-size:.92rem;
+  h2.step-title{display:flex;align-items:center;gap:10px;color:var(--ink);font-weight:700;}
+  .step-num{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:22px;height:22px;border-radius:50%;flex:0 0 auto;
+    background:linear-gradient(135deg, var(--accent), var(--accent2));
+    color:#fff;font-size:.72rem;font-weight:700;
   }
+  .drop{
+    border:2px dashed var(--line);border-radius:10px;padding:30px 20px;text-align:center;
+    cursor:pointer;transition:.18s; font-size:.92rem;
+  }
+  .drop:hover{border-color:var(--accent2);background:#fefaf8;}
   .drop.drag{border-color:var(--accent);background:var(--accent-soft);}
   .drop b{color:var(--accent);}
+  .drop-icon{font-size:2rem;margin-bottom:8px;}
+  .drop-title{font-size:.95rem;}
+  .drop-hint{font-size:.78rem;color:var(--muted);margin-top:6px;}
   input[type=file]{display:none;}
+  .feature-grid{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
+    margin-top:16px;text-align:left;
+  }
+  .feature-item{
+    display:flex;gap:10px;align-items:flex-start;
+    padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:#fdfcfa;
+  }
+  .feature-icon{font-size:1.25rem;line-height:1;flex:0 0 auto;}
+  .feature-item strong{display:block;font-size:.82rem;color:var(--ink);margin-bottom:2px;}
+  .feature-item p{margin:0;font-size:.75rem;color:var(--muted);line-height:1.45;}
+  @media(max-width:640px){ .feature-grid{grid-template-columns:1fr;} }
   .status{font-size:.85rem;color:var(--muted);margin-top:10px;min-height:1.2em;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;}
   label{display:block;font-size:.78rem;color:var(--muted);margin:8px 0 3px;}
@@ -41,6 +73,7 @@
   }
   table.items{width:100%;border-collapse:collapse;margin-top:6px;font-size:.85rem;}
   table.items th{background:#f5f2ea;font-weight:600;text-align:left;padding:6px 6px;border:1px solid var(--line);font-size:.76rem;color:var(--muted);}
+  table.items th .th-sub{display:block;font-weight:400;font-size:.68rem;color:var(--muted);opacity:.85;margin-top:1px;}
   table.items td{border:1px solid var(--line);padding:3px;vertical-align:top;}
   table.items td input{border:none;padding:5px 6px;width:100%;font-size:.85rem;}
   table.items td input:focus{outline:2px solid var(--accent-soft);background:#fffef9;}
@@ -48,18 +81,20 @@
   .del-btn{background:none;border:none;color:#b3492f;cursor:pointer;font-size:1rem;}
   .row-actions{margin-top:10px;display:flex;gap:8px;}
   button.plain{
-    background:#fff;border:1px solid var(--line);border-radius:6px;padding:7px 12px;
-    font-size:.85rem;cursor:pointer;color:var(--ink);
+    background:#fff;border:1px solid var(--line);border-radius:7px;padding:7px 12px;
+    font-size:.85rem;cursor:pointer;color:var(--ink);transition:.15s;
   }
-  button.plain:hover{border-color:var(--accent);}
+  button.plain:hover{border-color:var(--accent2);color:var(--accent);}
   .primary{
-    background:var(--accent);color:#fff;border:none;border-radius:7px;
-    padding:11px 20px;font-size:.95rem;cursor:pointer;font-weight:600;
+    background:var(--accent);color:#fff;border:none;border-radius:8px;
+    padding:11px 22px;font-size:.95rem;cursor:pointer;font-weight:600;
+    transition:.15s;box-shadow:0 2px 8px rgba(166,65,46,.25);
   }
-  .primary:disabled{opacity:.45;cursor:not-allowed;}
-  .primary:hover:not(:disabled){background:#8a3524;}
-  .note{font-size:.78rem;color:var(--muted);margin-top:10px;line-height:1.5;}
-  .hidden{display:none;}
+  .primary:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;}
+  .primary:hover:not(:disabled){background:#8a3524;transform:translateY(-1px);box-shadow:0 4px 12px rgba(166,65,46,.32);}
+  .note{font-size:.78rem;color:var(--muted);margin-top:10px;line-height:1.55;}
+  .note strong{color:var(--ink);}
+  .hidden{display:none !important;}
   .badge{display:inline-block;background:var(--accent-soft);color:var(--accent);font-size:.72rem;padding:2px 8px;border-radius:10px;margin-left:6px;}
 
   /* --- Image preview split layout --- */
@@ -107,32 +142,85 @@
   .img-tab:hover{color:var(--ink);}
   .img-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
 
-  .delivery-fields{
-    display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;
-    margin-top:12px;padding-top:12px;border-top:1px solid var(--line);
-  }
-  .delivery-fields h3{
-    grid-column:1/-1;margin:0 0 4px;font-size:.88rem;color:var(--ink);
-  }
-
   @media(max-width:860px){
     .split-view{flex-direction:column;}
     .preview-panel{flex:none;max-width:100%;position:static;max-height:50vh;}
     .preview-body{max-height:45vh;}
   }
+
+  /* --- Excel preview modal --- */
+  .modal-overlay{
+    position:fixed;inset:0;background:rgba(31,36,48,.55);
+    display:flex;align-items:center;justify-content:center;
+    padding:24px;z-index:1000;
+  }
+  .modal-box{
+    background:#fff;border-radius:10px;max-width:960px;width:100%;
+    max-height:90vh;display:flex;flex-direction:column;overflow:hidden;
+    box-shadow:0 12px 40px rgba(0,0,0,.25);
+  }
+  .modal-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 18px;border-bottom:1px solid var(--line);
+  }
+  .modal-head h2{margin:0;font-size:1rem;color:var(--accent);}
+  .modal-close{background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--muted);}
+  .modal-close:hover{color:var(--accent);}
+  .modal-content{padding:18px;overflow:auto;}
+  table.excel-preview{border-collapse:collapse;width:100%;font-size:.82rem;}
+  table.excel-preview td{border:1px solid #999;padding:6px 8px;text-align:center;vertical-align:middle;}
+  table.excel-preview .ep-title{font-weight:700;font-size:1.15em;}
+  table.excel-preview .ep-plain{border:none;}
+  table.excel-preview .ep-left{text-align:left;}
+  table.excel-preview .ep-right{text-align:right;}
+  table.excel-preview .ep-head{background:#f5f2ea;font-weight:600;}
+  .excel-preview-contact{margin-top:10px;font-weight:600;font-size:.82rem;}
+  .excel-preview-empty{color:var(--muted);font-size:.85rem;}
+
+  /* --- Batch PDF upload/output lists --- */
+  ul.batch-list{list-style:none;margin:8px 0 0;padding:0;}
+  ul.batch-list li{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:8px 10px;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;
+    font-size:.85rem;background:#fdfcfa;
+  }
+  ul.batch-list li.batch-item-error{color:#b3492f;border-color:#e2b7ab;background:#fdf3f0;}
+  .batch-item-label{flex:1;min-width:0;}
+  .batch-item-actions{display:flex;gap:6px;flex-shrink:0;}
+  .batch-item-actions button{padding:5px 10px;font-size:.8rem;}
 </style>
 </head>
 <body>
 <div class="wrap" id="mainWrap">
-  <h1>Chuyển đơn hàng PDF / Ảnh → Excel (theo mẫu)</h1>
-  <p class="sub">Tải file PDF hoặc ảnh (JPG, PNG) đơn đặt hàng lên, kiểm tra/sửa dữ liệu, rồi xuất ra file Excel đúng định dạng mẫu.</p>
+  <div class="hero">
+    <div class="hero-icon">📄</div>
+    <div>
+      <h1>Công Cụ Hỗ Trợ Xử Lý Đơn Hàng</h1>
+      <p class="sub">Tự động trích xuất dữ liệu từ PDF, ảnh chụp hóa đơn hoặc file Excel — gộp theo ngày và xuất ra file Excel đúng chuẩn chỉ trong vài giây.</p>
+    </div>
+  </div>
 
   <div class="card">
-    <h2>1. Tải file PDF hoặc Ảnh</h2>
+    <h2 class="step-title"><span class="step-num">1</span> Tải lên dữ liệu đơn hàng</h2>
     <div class="drop" id="dropZone">
-      <div>📄 Kéo thả file PDF hoặc ảnh vào đây, hoặc <b>bấm để chọn file</b></div>
-      <div style="font-size:.78rem;color:var(--muted);margin-top:6px;">Hỗ trợ: PDF, JPG, PNG, BMP, WebP</div>
-      <input type="file" id="fileInput" accept="application/pdf,image/*">
+      <div class="drop-icon">📥</div>
+      <div class="drop-title">Kéo thả file vào đây, hoặc <b>bấm để chọn file</b></div>
+      <div class="drop-hint">Hỗ trợ PDF, JPG, PNG, BMP, WebP, XLSX — có thể chọn nhiều file cùng lúc</div>
+      <input type="file" id="fileInput" accept="application/pdf,image/*,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" multiple>
+    </div>
+    <div class="feature-grid">
+      <div class="feature-item">
+        <span class="feature-icon">📑</span>
+        <div><strong>File PDF</strong><p>Trích xuất dữ liệu tự động và xuất Excel theo từng ngày.</p></div>
+      </div>
+      <div class="feature-item">
+        <span class="feature-icon">🗂️</span>
+        <div><strong>File Excel</strong><p>Chọn nhiều file cùng ngày để tự động gộp thành một file duy nhất.</p></div>
+      </div>
+      <div class="feature-item">
+        <span class="feature-icon">🖼️</span>
+        <div><strong>Ảnh hóa đơn</strong><p>Nhập liệu thủ công song song với ảnh gốc, rồi xuất Excel.</p></div>
+      </div>
     </div>
     <div class="status" id="status"></div>
   </div>
@@ -164,7 +252,7 @@
       <!-- Tab: Info -->
       <div class="img-tab-content" id="tabInfo">
         <div class="card" style="margin-bottom:12px;">
-          <h2>Thông tin tiêu đề (mẫu công ty phát hành)</h2>
+          <h2>Thông tin công ty &amp; đơn hàng</h2>
           <div class="grid2">
             <div>
               <label>Tên công ty (dòng 1)</label>
@@ -184,7 +272,7 @@
             </div>
             <div>
               <label>Ngày đặt hàng (订单日期)</label>
-              <input type="text" id="imgDate" placeholder="2026.08.28">
+              <input type="text" id="imgDate" placeholder="yyyy.mm.dd">
             </div>
             <div>
               <label>Số đơn hàng (订单号)</label>
@@ -193,26 +281,6 @@
             <div>
               <label>Người liên hệ cuối trang (联系人)</label>
               <input type="text" id="imgContact">
-            </div>
-          </div>
-
-          <div class="delivery-fields">
-            <h3>Thông tin phiếu giao hàng (送货单)</h3>
-            <div>
-              <label>Số phiếu (No.)</label>
-              <input type="text" id="imgDeliveryNo" placeholder="0002944">
-            </div>
-            <div>
-              <label>Ngày giao hàng</label>
-              <input type="text" id="imgDeliveryDate" placeholder="2026.08.27">
-            </div>
-            <div>
-              <label>Người mở phiếu (开单)</label>
-              <input type="text" id="imgIssuer">
-            </div>
-            <div>
-              <label>Người giao hàng (送货人签章)</label>
-              <input type="text" id="imgDeliverer">
             </div>
           </div>
         </div>
@@ -226,14 +294,12 @@
             <table class="items">
               <thead>
                 <tr>
-                  <th style="width:12%">订单编号</th>
-                  <th style="width:14%">物料编号</th>
-                  <th style="width:18%">名称及规格</th>
-                  <th style="width:7%">单位</th>
-                  <th style="width:9%">订单数量</th>
-                  <th style="width:9%">出货数</th>
-                  <th style="width:11%">剩余未交数量</th>
-                  <th style="width:10%">备注</th>
+                  <th style="width:14%">物料代码<span class="th-sub">Mã hàng</span></th>
+                  <th style="width:20%">品名<span class="th-sub">Tên sản phẩm</span></th>
+                  <th style="width:34%">规格<span class="th-sub">Quy cách</span></th>
+                  <th style="width:8%">数量<span class="th-sub">Số lượng</span></th>
+                  <th style="width:8%">单位<span class="th-sub">Đơn vị</span></th>
+                  <th style="width:10%">备注<span class="th-sub">Ghi chú</span></th>
                   <th class="col-del"></th>
                 </tr>
               </thead>
@@ -243,7 +309,7 @@
           <div class="row-actions">
             <button class="plain" id="imgAddRow">+ Thêm dòng</button>
           </div>
-          <p class="note">Nhìn ảnh hóa đơn bên trái, nhập dữ liệu vào từng ô tương ứng. Có thể phóng to/thu nhỏ ảnh bằng nút zoom.</p>
+          <p class="note"><strong>Mẹo:</strong> đối chiếu với ảnh hóa đơn bên trái để nhập dữ liệu vào từng ô, đặc biệt cột 品名 (Tên sản phẩm) và 规格 (Quy cách). Dùng nút phóng to/thu nhỏ để xem rõ hơn.</p>
         </div>
       </div>
 
@@ -251,16 +317,34 @@
       <div class="img-tab-content hidden" id="tabExport">
         <div class="card">
           <h2>Xuất Excel</h2>
-          <button class="primary" id="imgExportBtn">⬇ Xuất file Excel theo mẫu</button>
+          <div class="row-actions">
+            <button class="plain" id="previewBtnImg">👁 Xem trước</button>
+            <button class="primary" id="imgExportBtn">⬇ Xuất file Excel</button>
+          </div>
           <div class="status" id="imgExportStatus"></div>
+          <p class="note">File xuất ra tuân theo mẫu chuẩn của công ty, sẵn sàng gửi đi hoặc lưu trữ.</p>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- Batch mode (multiple PDF/Excel files uploaded at once, hidden by default) -->
+  <div class="card hidden" id="batchCard">
+    <h2>Các file đã tải lên</h2>
+    <ul class="batch-list" id="batchUploadList"></ul>
+
+    <h2 style="margin-top:18px;">Kết quả — file Excel theo từng ngày</h2>
+    <ul class="batch-list" id="batchOutputList"></ul>
+    <div class="row-actions">
+      <button class="plain" id="batchDownloadAllBtn">⬇ Tải tất cả</button>
+    </div>
+    <div class="status" id="batchStatus"></div>
+    <p class="note">Các đơn hàng cùng ngày sẽ tự động gộp vào một file; đơn trùng số đơn hàng sẽ được loại bỏ để tránh nhân đôi dữ liệu.</p>
+  </div>
+
   <!-- PDF mode cards (existing, hidden by default) -->
   <div class="card hidden" id="headerCard">
-    <h2>2. Thông tin tiêu đề (mẫu công ty phát hành)</h2>
+    <h2 class="step-title"><span class="step-num">2</span> Thông tin công ty &amp; đơn hàng</h2>
     <div class="grid2">
       <div>
         <label>Tên công ty (dòng 1)</label>
@@ -280,7 +364,7 @@
       </div>
       <div>
         <label>Ngày đặt hàng (订单日期)</label>
-        <input type="text" id="hDate" placeholder="2026.08.28">
+        <input type="text" id="hDate" placeholder="yyyy.mm.dd">
       </div>
       <div>
         <label>Số đơn hàng (订单号)</label>
@@ -294,16 +378,16 @@
   </div>
 
   <div class="card hidden" id="itemsCard">
-    <h2>3. Danh sách sản phẩm <span class="badge" id="itemCount">0 dòng</span></h2>
+    <h2 class="step-title"><span class="step-num">3</span> Danh sách sản phẩm <span class="badge" id="itemCount">0 dòng</span></h2>
     <table class="items">
       <thead>
         <tr>
-          <th style="width:14%">物料代码</th>
-          <th style="width:20%">品名</th>
-          <th style="width:34%">规格</th>
-          <th style="width:8%">数量</th>
-          <th style="width:8%">单位</th>
-          <th style="width:10%">备注</th>
+          <th style="width:14%">物料代码<span class="th-sub">Mã hàng</span></th>
+          <th style="width:20%">品名<span class="th-sub">Tên sản phẩm</span></th>
+          <th style="width:34%">规格<span class="th-sub">Quy cách</span></th>
+          <th style="width:8%">数量<span class="th-sub">Số lượng</span></th>
+          <th style="width:8%">单位<span class="th-sub">Đơn vị</span></th>
+          <th style="width:10%">备注<span class="th-sub">Ghi chú</span></th>
           <th class="col-del"></th>
         </tr>
       </thead>
@@ -312,13 +396,28 @@
     <div class="row-actions">
       <button class="plain" id="addRow">+ Thêm dòng</button>
     </div>
-    <p class="note">Dữ liệu được trích tự động từ layout bảng trong PDF — vì mỗi PDF có thể trình bày khác nhau, hãy kiểm tra lại từng ô trước khi xuất file, đặc biệt là cột 品名/规格.</p>
+    <p class="note"><strong>Lưu ý:</strong> dữ liệu được trích xuất tự động từ bảng trong file PDF. Do mỗi PDF có thể trình bày khác nhau, vui lòng kiểm tra lại từng ô trước khi xuất file — đặc biệt cột 品名 (Tên sản phẩm) và 规格 (Quy cách).</p>
   </div>
 
   <div class="card hidden" id="exportCard">
-    <h2>4. Xuất Excel</h2>
-    <button class="primary" id="exportBtn">⬇ Xuất file Excel theo mẫu</button>
+    <h2 class="step-title"><span class="step-num">4</span> Xuất Excel</h2>
+    <div class="row-actions">
+      <button class="plain" id="previewBtnPdf">👁 Xem trước</button>
+      <button class="primary" id="exportBtn">⬇ Xuất file Excel</button>
+    </div>
     <div class="status" id="exportStatus"></div>
+    <p class="note"><strong>Mẹo:</strong> muốn gộp nhiều đơn hàng cùng ngày vào một file Excel? Quay lại bước 1 và chọn nhiều file PDF và/hoặc Excel cùng lúc — hệ thống sẽ tự nhóm theo ngày, loại bỏ đơn trùng, và xuất mỗi ngày một file.</p>
+  </div>
+</div>
+
+<!-- Shared Excel preview modal -->
+<div class="modal-overlay hidden" id="previewOverlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="previewTitle">Xem trước Excel</h2>
+      <button class="modal-close" id="previewCloseBtn">✕</button>
+    </div>
+    <div class="modal-content" id="previewContent"></div>
   </div>
 </div>
 
@@ -337,17 +436,38 @@ let currentMode = null; // 'pdf' or 'image'
 dropZone.addEventListener('click', () => fileInput.click());
 ['dragenter','dragover'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('drag'); }));
 ['dragleave','drop'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('drag'); }));
-dropZone.addEventListener('drop', e => { if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
-fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+dropZone.addEventListener('drop', e => { if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFiles(e.target.files); });
 
 function isImageFile(file){
   return file.type.startsWith('image/');
 }
 
-async function handleFile(file){
-  // Reset both modes
-  hideAllSections();
+const DEFAULT_HEADER = {
+  company: '东莞市西南纸品装有限公司',
+  phoneLine: '电话：刘生13923899278',
+  address: '宝安区石岩料坑大道26号百利恒泰207',
+  contact: '联系人：刘生'
+};
 
+function isExcelFile(file){
+  return file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      || file.type === 'application/vnd.ms-excel'
+      || /\.xlsx?$/i.test(file.name);
+}
+
+function handleFiles(fileList){
+  const files = Array.from(fileList);
+  if (files.length === 0) return;
+  hideAllSections();
+  if (files.length === 1 && !isExcelFile(files[0])){
+    handleSingleFile(files[0]);
+  } else {
+    handleBatchFiles(files);
+  }
+}
+
+async function handleSingleFile(file){
   if (isImageFile(file)){
     handleImage(file);
     return;
@@ -360,28 +480,14 @@ async function handleFile(file){
   mainWrap.classList.remove('wide');
   statusEl.textContent = 'Đang đọc PDF…';
   try{
-    const buf = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
-    let items = [];
-    for (let p = 1; p <= pdf.numPages; p++){
-      const page = await pdf.getPage(p);
-      const content = await page.getTextContent();
-      content.items.forEach(it => {
-        if (it.str.trim() !== '') items.push({str: it.str, x: it.transform[4], y: it.transform[5], width: it.width || 0, page: p});
-      });
-    }
-    const lines = groupLines(items);
-    const fullText = lines.map(l => l.items.map(i => i.str).join('')).join('\n');
-    const parsed = parseHeader(fullText);
-    const columnEdges = await extractColumnEdges(pdf);
-    const rows = parseTable(lines, columnEdges);
+    const parsed = await parsePdfFile(file);
     fillHeader(parsed);
-    fillTable(rows);
+    fillTable(parsed.rows);
     document.getElementById('headerCard').classList.remove('hidden');
     document.getElementById('itemsCard').classList.remove('hidden');
     document.getElementById('exportCard').classList.remove('hidden');
-    statusEl.textContent = `Đã đọc xong "${file.name}" — ${rows.length} dòng sản phẩm. `
-      + (columnEdges ? `Đã dò được khung bảng (${columnEdges.length} vạch cột).` : 'Không thấy khung bảng, dùng chế độ dò theo vị trí chữ.')
+    statusEl.textContent = `Đã đọc xong "${file.name}" — ${parsed.rows.length} dòng sản phẩm. `
+      + (parsed.columnEdgeCount ? `Đã dò được khung bảng (${parsed.columnEdgeCount} vạch cột).` : 'Không thấy khung bảng, dùng chế độ dò theo vị trí chữ.')
       + ' [v5]';
   }catch(err){
     console.error(err);
@@ -389,12 +495,243 @@ async function handleFile(file){
   }
 }
 
+/* Parses one PDF file into header info + product rows, without touching the DOM
+   — used both by the single-file flow and the multi-file batch flow. */
+async function parsePdfFile(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+  let items = [];
+  for (let p = 1; p <= pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    content.items.forEach(it => {
+      if (it.str.trim() !== '') items.push({str: it.str, x: it.transform[4], y: it.transform[5], width: it.width || 0, page: p});
+    });
+  }
+  const lines = groupLines(items);
+  const fullText = lines.map(l => l.items.map(i => i.str).join('')).join('\n');
+  const header = parseHeader(fullText);
+  const columnEdges = await extractColumnEdges(pdf);
+  const rows = parseTable(lines, columnEdges);
+  return { ...header, rows, columnEdgeCount: columnEdges ? columnEdges.length : 0 };
+}
+
+/* Reads an existing .xlsx built by this tool (or a merged file with several orders inside)
+   and reconstructs its order groups + header, so it can be checked/re-merged like a PDF.
+   Returns an ARRAY — one entry per order group found in the sheet — unlike parsePdfFile. */
+async function parseExcelFile(file){
+  const buf = await file.arrayBuffer();
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf);
+  const ws = wb.worksheets[0];
+  if (!ws) throw new Error('Không đọc được sheet nào trong file.');
+  const readVal = (r,c) => { const v = ws.getCell(r,c).value; return v == null ? '' : String(v).trim(); };
+
+  const company = readVal(1,1);
+  const phoneLine = readVal(2,1);
+  const customer = readVal(4,1).replace(/^客户[：:]\s*/, '');
+  const address = readVal(5,1).replace(/^送货地址[：:]\s*/, '');
+
+  const orders = [];
+  let cur = null;
+  let orderDate = '';
+  let row = 8;
+  for (; ; row++){
+    const code = readVal(row, 3);
+    if (!code || code === '合计') break;
+    if (!orderDate) orderDate = readVal(row, 1);
+    const orderNo = readVal(row, 2);
+    const rowData = { code, name: readVal(row,4), spec: readVal(row,5), qty: readVal(row,6), unit: readVal(row,7), remark: readVal(row,8) };
+    if (cur && cur.orderNo === orderNo){
+      cur.rows.push(rowData);
+    } else {
+      cur = { orderNo, rows: [rowData] };
+      orders.push(cur);
+    }
+  }
+  if (orders.length === 0) throw new Error('Không tìm thấy dòng sản phẩm nào đúng định dạng mẫu trong file.');
+  const contact = readVal(row + 2, 1);
+
+  return orders.map(o => ({
+    orderNo: o.orderNo,
+    orderDate,
+    customer, address, company, phoneLine, contact,
+    rows: o.rows
+  }));
+}
+
 function hideAllSections(){
   document.getElementById('headerCard').classList.add('hidden');
   document.getElementById('itemsCard').classList.add('hidden');
   document.getElementById('exportCard').classList.add('hidden');
   document.getElementById('imageSection').classList.add('hidden');
+  document.getElementById('batchCard').classList.add('hidden');
   mainWrap.classList.remove('wide');
+}
+
+/* ====== BATCH MODE (multiple PDF and/or Excel files uploaded at once) ======
+   PDF files each contribute one order (parsePdfFile); an Excel file may already
+   hold several orders merged together (parseExcelFile returns an array). Both
+   are flattened into the same per-order shape, then grouped by date and
+   de-duplicated by order number before being re-packed into output files. */
+
+async function handleBatchFiles(files){
+  currentMode = 'batch';
+  mainWrap.classList.remove('wide');
+  document.getElementById('batchCard').classList.remove('hidden');
+  statusEl.textContent = `Đang đọc ${files.length} file…`;
+
+  const uploadList = document.getElementById('batchUploadList');
+  const outputList = document.getElementById('batchOutputList');
+  const batchStatus = document.getElementById('batchStatus');
+  uploadList.innerHTML = '';
+  outputList.innerHTML = '';
+  batchStatus.textContent = '';
+
+  const eligibleFiles = files.filter(f => f.type === 'application/pdf' || isExcelFile(f));
+  const skippedCount = files.length - eligibleFiles.length;
+
+  const fileRecords = eligibleFiles.map(file => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="batch-item-label">📄 ${escapeHtml(file.name)} — đang đọc…</span>`;
+    uploadList.appendChild(li);
+    return { file, li, entries: [] };
+  });
+
+  for (const rec of fileRecords){
+    try {
+      rec.entries = rec.file.type === 'application/pdf'
+        ? [await parsePdfFile(rec.file)]
+        : await parseExcelFile(rec.file);
+    } catch(err){
+      console.error(err);
+      rec.error = err.message;
+    }
+  }
+
+  if (skippedCount > 0){
+    const li = document.createElement('li');
+    li.className = 'batch-item-error';
+    li.innerHTML = `<span class="batch-item-label">⚠ Đã bỏ qua ${skippedCount} file không phải PDF/Excel (chế độ gộp chỉ áp dụng cho PDF và Excel).</span>`;
+    uploadList.appendChild(li);
+  }
+
+  // Flatten every file's order entries into one list, still tagged with their source record.
+  const parsedOrders = [];
+  fileRecords.forEach(rec => {
+    if (rec.error) return;
+    rec.entries.forEach(e => {
+      if (e.rows && e.rows.length) parsedOrders.push({ ...e, _record: rec });
+    });
+  });
+
+  const groupsByDate = new Map();
+  parsedOrders.forEach(p => {
+    const ymd = computeYmd(p.orderDate);
+    if (!groupsByDate.has(ymd)) groupsByDate.set(ymd, []);
+    groupsByDate.get(ymd).push(p);
+  });
+
+  // Same date + same order number = duplicate data — keep the first, mark the rest skipped.
+  groupsByDate.forEach((orders, ymd) => {
+    const seen = new Set();
+    const deduped = [];
+    orders.forEach(o => {
+      if (o.orderNo && seen.has(o.orderNo)){
+        o._duplicate = true;
+      } else {
+        if (o.orderNo) seen.add(o.orderNo);
+        deduped.push(o);
+      }
+    });
+    groupsByDate.set(ymd, deduped);
+  });
+
+  // Render each file's final status line(s) now that we know which of its entries survived.
+  fileRecords.forEach(rec => {
+    if (rec.error){
+      rec.li.className = 'batch-item-error';
+      rec.li.innerHTML = `<span class="batch-item-label">📄 ${escapeHtml(rec.file.name)} — lỗi: ${escapeHtml(rec.error)}</span>`;
+      return;
+    }
+    const ownEntries = parsedOrders.filter(p => p._record === rec);
+    if (ownEntries.length === 0){
+      rec.li.className = 'batch-item-error';
+      rec.li.innerHTML = `<span class="batch-item-label">📄 ${escapeHtml(rec.file.name)} — không tìm thấy dòng sản phẩm nào đúng định dạng mẫu.</span>`;
+      return;
+    }
+    const parts = ownEntries.map(p => p._duplicate
+      ? `đơn ${p.orderNo || '?'} — trùng, đã bỏ qua`
+      : `ngày ${p.orderDate || '(không rõ)'}, đơn ${p.orderNo || '(không rõ)'} (${p.rows.length} dòng)`);
+    rec.li.className = ownEntries.some(p => p._duplicate) ? 'batch-item-error' : '';
+    rec.li.innerHTML = `<span class="batch-item-label">📄 ${escapeHtml(rec.file.name)} — ${escapeHtml(parts.join('; '))}</span>`;
+  });
+
+  const outputs = [...groupsByDate.entries()]
+    .filter(([, orders]) => orders.length > 0)
+    .map(([ymd, orders]) => ({
+      ymd,
+      filename: `${ymd}_采购订单.xlsx`,
+      header: buildBatchHeader(orders[0]),
+      orderGroups: orders.map(o => ({ orderNo: o.orderNo, rows: o.rows })),
+    }));
+
+  if (outputs.length === 0){
+    statusEl.textContent = 'Không đọc được đơn hàng hợp lệ nào từ các file đã chọn.';
+    batchStatus.textContent = 'Không có dữ liệu để xuất.';
+    return;
+  }
+
+  outputs.forEach(out => {
+    const totalRows = out.orderGroups.reduce((n,g) => n + g.rows.length, 0);
+    const li = document.createElement('li');
+    const label = document.createElement('span');
+    label.className = 'batch-item-label';
+    label.textContent = `📊 ${out.filename} — ${out.orderGroups.length} đơn hàng, ${totalRows} dòng sản phẩm`;
+    const actions = document.createElement('span');
+    actions.className = 'batch-item-actions';
+    const previewBtn = document.createElement('button');
+    previewBtn.className = 'plain';
+    previewBtn.textContent = '👁 Xem trước';
+    previewBtn.onclick = () => showPreview(out.header, out.orderGroups, out.filename);
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'plain';
+    downloadBtn.textContent = '⬇ Tải xuống';
+    downloadBtn.onclick = async () => {
+      const buf = await buildOrderWorkbook(out.header, out.orderGroups);
+      downloadWorkbook(batchStatus, buf, out.filename);
+    };
+    actions.appendChild(previewBtn);
+    actions.appendChild(downloadBtn);
+    li.appendChild(label);
+    li.appendChild(actions);
+    outputList.appendChild(li);
+  });
+
+  document.getElementById('batchDownloadAllBtn').onclick = async () => {
+    for (const out of outputs){
+      const buf = await buildOrderWorkbook(out.header, out.orderGroups);
+      downloadWorkbook(batchStatus, buf, out.filename);
+      await new Promise(r => setTimeout(r, 300));
+    }
+  };
+
+  statusEl.textContent = `Đã đọc ${eligibleFiles.length} file — gộp thành ${outputs.length} file Excel theo ngày.`;
+}
+
+function buildBatchHeader(sampleOrder){
+  return {
+    company: sampleOrder.company || DEFAULT_HEADER.company,
+    phoneLine: sampleOrder.phoneLine || DEFAULT_HEADER.phoneLine,
+    address: sampleOrder.address || DEFAULT_HEADER.address,
+    contact: sampleOrder.contact || DEFAULT_HEADER.contact,
+    customer: sampleOrder.customer || '',
+    orderDate: sampleOrder.orderDate || ''
+  };
+}
+
+function singleGroup(header, rows){
+  return [{ orderNo: header.orderNo, rows }];
 }
 
 /* ====== IMAGE MODE ====== */
@@ -488,17 +825,13 @@ document.getElementById('previewBody').addEventListener('wheel', e => {
 }, {passive: false});
 
 function fillImageDefaults(){
-  document.getElementById('imgCompany').value = '东莞市西南纸品装有限公司';
-  document.getElementById('imgPhoneLine').value = '电话：刘生13923899278';
-  document.getElementById('imgContact').value = '联系人：刘生';
-  document.getElementById('imgAddress').value = '宝安区石岩料坑大道26号百利恒泰207';
+  document.getElementById('imgCompany').value = DEFAULT_HEADER.company;
+  document.getElementById('imgPhoneLine').value = DEFAULT_HEADER.phoneLine;
+  document.getElementById('imgContact').value = DEFAULT_HEADER.contact;
+  document.getElementById('imgAddress').value = DEFAULT_HEADER.address;
   document.getElementById('imgCustomer').value = '';
   document.getElementById('imgDate').value = '';
   document.getElementById('imgOrderNo').value = '';
-  document.getElementById('imgDeliveryNo').value = '';
-  document.getElementById('imgDeliveryDate').value = '';
-  document.getElementById('imgIssuer').value = '';
-  document.getElementById('imgDeliverer').value = '';
   // clear product table and add one empty row
   const imgBody = document.getElementById('imgItemsBody');
   imgBody.innerHTML = '';
@@ -517,33 +850,12 @@ document.querySelectorAll('.img-tab').forEach(tab => {
   });
 });
 
-// Image product table
+// Image product table (same 6-column format as PDF mode)
 const imgItemsBody = document.getElementById('imgItemsBody');
 const imgItemCount = document.getElementById('imgItemCount');
-const imgFields = ['orderCode','materialCode','nameSpec','unit','orderQty','shipQty','remaining','remark'];
 
 function addImgItemRow(data){
-  data = data || {};
-  const tr = document.createElement('tr');
-  imgFields.forEach(f => {
-    const td = document.createElement('td');
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.dataset.field = f;
-    input.value = data[f] || '';
-    if (f === 'unit') input.placeholder = 'PCS';
-    td.appendChild(input);
-    tr.appendChild(td);
-  });
-  const tdDel = document.createElement('td');
-  tdDel.className = 'col-del';
-  const delBtn = document.createElement('button');
-  delBtn.className = 'del-btn';
-  delBtn.textContent = '✕';
-  delBtn.onclick = () => { tr.remove(); updateImgCount(); };
-  tdDel.appendChild(delBtn);
-  tr.appendChild(tdDel);
-  imgItemsBody.appendChild(tr);
+  imgItemsBody.appendChild(createItemRow(data, () => updateImgCount()));
   updateImgCount();
 }
 
@@ -553,157 +865,13 @@ function updateImgCount(){
 
 document.getElementById('imgAddRow').addEventListener('click', () => addImgItemRow());
 
-// Image mode Excel export
-document.getElementById('imgExportBtn').addEventListener('click', exportImageExcel);
-
-async function exportImageExcel(){
-  const exportStatus = document.getElementById('imgExportStatus');
-  const rowsData = [...imgItemsBody.children].map(tr => {
-    const obj = {};
-    tr.querySelectorAll('input').forEach(inp => obj[inp.dataset.field] = inp.value);
-    return obj;
-  }).filter(r => r.orderCode || r.materialCode || r.nameSpec);
-
-  if (rowsData.length === 0){ exportStatus.textContent = 'Chưa có dòng sản phẩm nào.'; return; }
-
-  const company = document.getElementById('imgCompany').value;
-  const phoneLine = document.getElementById('imgPhoneLine').value;
-  const customer = document.getElementById('imgCustomer').value;
-  const address = document.getElementById('imgAddress').value;
-  const orderDate = document.getElementById('imgDate').value;
-  const orderNo = document.getElementById('imgOrderNo').value;
-  const contact = document.getElementById('imgContact').value;
-
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('采购订单');
-  ws.columns = [
-    {width:14},{width:16},{width:22},{width:8},{width:12},{width:12},{width:14},{width:14}
-  ];
-
-  const thin = {style:'thin'};
-  const border = {top:thin,bottom:thin,left:thin,right:thin};
-  const centerC = {horizontal:'center', vertical:'middle'};
-
-  const setRow = (rowIdx, text, opts) => {
-    ws.mergeCells(rowIdx,1,rowIdx,8);
-    const cell = ws.getCell(rowIdx,1);
-    cell.value = text;
-    cell.font = {name:'SimSun', size: opts.size||11, bold: opts.bold!==false};
-    cell.alignment = {horizontal: opts.align||'center', vertical:'middle'};
-  };
-
-  setRow(1, company, {size:18});
-  ws.getRow(1).height = 22.5;
-  setRow(2, phoneLine, {size:11});
-  setRow(3, '采购订单', {size:11});
-  setRow(4, '客户：' + customer + ' ', {size:11, align:'left'});
-  setRow(5, '送货地址：' + address, {size:11, align:'left'});
-
-  const headers = ['订单编号','物料编号','名称及规格','单位','订单数量','出货数','剩余未交数量','备注'];
-  headers.forEach((h,i) => {
-    const c = ws.getCell(7, i+1);
-    c.value = h;
-    c.font = {name:'SimSun', size:11, bold:true};
-    c.alignment = centerC;
-    c.border = border;
-  });
-
-  const startRow = 8;
-  rowsData.forEach((r, i) => {
-    const rowIdx = startRow + i;
-    const orderQty = parseFloat(String(r.orderQty).replace(/[^\d.]/g, ''));
-    const shipQty = parseFloat(String(r.shipQty).replace(/[^\d.]/g, ''));
-    const remaining = parseFloat(String(r.remaining).replace(/[^\d.]/g, ''));
-    const rowVals = [
-      r.orderCode, r.materialCode, r.nameSpec,
-      r.unit || 'PCS',
-      isNaN(orderQty) ? '' : orderQty,
-      isNaN(shipQty) ? '' : shipQty,
-      isNaN(remaining) ? '' : remaining,
-      r.remark
-    ];
-    rowVals.forEach((v, ci) => {
-      const c = ws.getCell(rowIdx, ci+1);
-      c.value = v;
-      c.border = border;
-      c.alignment = {horizontal:'center', vertical:'middle', wrapText:true};
-      if (ci <= 1){ c.font = {name:'Times New Roman', size:11, bold:true}; }
-      else if (ci >= 4 && ci <= 6){ c.font = {name:'SimSun', size:11, bold:true}; }
-      else { c.font = {name:'SimSun', size:11, bold:false}; }
-    });
-    ws.getRow(rowIdx).height = 40.5;
-  });
-
-  const endRow = startRow + rowsData.length - 1;
-
-  const totalRow = endRow + 1;
-  ws.mergeCells(totalRow,1,totalRow,4);
-  const totalLabel = ws.getCell(totalRow,1);
-  totalLabel.value = '合计';
-  totalLabel.font = {name:'SimSun', size:11, bold:true};
-  totalLabel.alignment = {horizontal:'right', vertical:'middle'};
-  totalLabel.border = border;
-  for (let c=2;c<=4;c++){ ws.getCell(totalRow,c).border = border; }
-
-  // sum order qty
-  const totalOrderQty = rowsData.reduce((sum, r) => {
-    const n = parseFloat(String(r.orderQty).replace(/[^\d.]/g, ''));
-    return sum + (isNaN(n) ? 0 : n);
-  }, 0);
-  const sumCell = ws.getCell(totalRow,5);
-  sumCell.value = { formula: `SUM(E${startRow}:E${endRow})`, result: totalOrderQty };
-  sumCell.font = {name:'Times New Roman', size:11, bold:true};
-  sumCell.alignment = centerC;
-  sumCell.border = border;
-
-  // sum ship qty
-  const totalShipQty = rowsData.reduce((sum, r) => {
-    const n = parseFloat(String(r.shipQty).replace(/[^\d.]/g, ''));
-    return sum + (isNaN(n) ? 0 : n);
-  }, 0);
-  const sumShipCell = ws.getCell(totalRow,6);
-  sumShipCell.value = { formula: `SUM(F${startRow}:F${endRow})`, result: totalShipQty };
-  sumShipCell.font = {name:'Times New Roman', size:11, bold:true};
-  sumShipCell.alignment = centerC;
-  sumShipCell.border = border;
-
-  ws.getCell(totalRow,7).border = border;
-  ws.getCell(totalRow,8).border = border;
-
-  const contactRow = totalRow + 2;
-  ws.getCell(contactRow,1).value = contact;
-  ws.getCell(contactRow,1).font = {name:'SimSun', size:11, bold:true};
-
-  const buf = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const url = URL.createObjectURL(blob);
-  const ymd = (orderDate || '').replace(/[^\d]/g, '') || 'yyyymmdd';
-  const filename = `${ymd}_采购订单.xlsx`;
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  exportStatus.innerHTML = '';
-  const msg = document.createElement('div');
-  msg.textContent = '✓ File đã sẵn sàng. Nếu không tự tải xuống, bấm vào link bên dưới:';
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.textContent = '⬇ ' + filename;
-  link.style.display = 'inline-block';
-  link.style.marginTop = '8px';
-  link.style.color = '#a6412e';
-  link.style.fontWeight = '600';
-  link.style.wordBreak = 'break-all';
-  link.target = '_blank';
-  link.rel = 'noopener';
-  exportStatus.appendChild(msg);
-  exportStatus.appendChild(link);
-}
+document.getElementById('imgExportBtn').addEventListener('click', () => {
+  runExport(document.getElementById('imgExportStatus'), gatherOrderData('img'), gatherRows(imgItemsBody));
+});
+document.getElementById('previewBtnImg').addEventListener('click', () => {
+  const header = gatherOrderData('img');
+  showPreview(header, singleGroup(header, gatherRows(imgItemsBody)), filenameForDate(header.orderDate));
+});
 
 /* ====== PDF MODE (existing logic) ====== */
 
@@ -733,7 +901,7 @@ function parseHeader(fullText){
     const [y,m,d] = date.split('/');
     date = `${y}.${m.padStart(2,'0')}.${d.padStart(2,'0')}`;
   }
-  return { orderNo, customer, address, date };
+  return { orderNo, customer, address, orderDate: date };
 }
 
 function charMapWithSpans(line){
@@ -949,20 +1117,21 @@ function parseTable(lines, columnEdges){
 }
 
 function fillHeader(p){
-  document.getElementById('hCompany').value = '东莞市西南纸品装有限公司';
-  document.getElementById('hPhoneLine').value = '电话：刘生13923899278';
-  document.getElementById('hContact').value = '联系人：刘生';
+  document.getElementById('hCompany').value = DEFAULT_HEADER.company;
+  document.getElementById('hPhoneLine').value = DEFAULT_HEADER.phoneLine;
+  document.getElementById('hContact').value = DEFAULT_HEADER.contact;
   document.getElementById('hCustomer').value = p.customer || '';
-  document.getElementById('hAddress').value = '宝安区石岩料坑大道26号百利恒泰207';
-  document.getElementById('hDate').value = p.date || '';
+  document.getElementById('hAddress').value = DEFAULT_HEADER.address;
+  document.getElementById('hDate').value = p.orderDate || '';
   document.getElementById('hOrderNo').value = p.orderNo || '';
 }
 
-function addItemRow(data){
+const ITEM_FIELDS = ['code','name','spec','qty','unit','remark'];
+
+function createItemRow(data, onDelete){
   data = data || { code:'', name:'', spec:'', qty:'', unit:'PCS', remark:'' };
   const tr = document.createElement('tr');
-  const fields = ['code','name','spec','qty','unit','remark'];
-  fields.forEach(f => {
+  ITEM_FIELDS.forEach(f => {
     const td = document.createElement('td');
     const input = document.createElement('input');
     input.type = 'text';
@@ -976,10 +1145,14 @@ function addItemRow(data){
   const delBtn = document.createElement('button');
   delBtn.className = 'del-btn';
   delBtn.textContent = '✕';
-  delBtn.onclick = () => { tr.remove(); updateCount(); };
+  delBtn.onclick = () => { tr.remove(); if (onDelete) onDelete(); };
   tdDel.appendChild(delBtn);
   tr.appendChild(tdDel);
-  itemsBody.appendChild(tr);
+  return tr;
+}
+
+function addItemRow(data){
+  itemsBody.appendChild(createItemRow(data, updateCount));
   updateCount();
 }
 
@@ -995,25 +1168,59 @@ function fillTable(rows){
 
 document.getElementById('addRow').addEventListener('click', () => addItemRow());
 
-document.getElementById('exportBtn').addEventListener('click', exportExcel);
+document.getElementById('exportBtn').addEventListener('click', () => {
+  runExport(document.getElementById('exportStatus'), gatherOrderData('h'), gatherRows(itemsBody));
+});
+document.getElementById('previewBtnPdf').addEventListener('click', () => {
+  const header = gatherOrderData('h');
+  showPreview(header, singleGroup(header, gatherRows(itemsBody)), filenameForDate(header.orderDate));
+});
 
-async function exportExcel(){
-  const exportStatus = document.getElementById('exportStatus');
-  const rowsData = [...itemsBody.children].map(tr => {
+/* ====== Shared: read form data / rows (used by both PDF and image mode) ====== */
+
+function gatherOrderData(prefix){
+  return {
+    company: document.getElementById(prefix+'Company').value,
+    phoneLine: document.getElementById(prefix+'PhoneLine').value,
+    customer: document.getElementById(prefix+'Customer').value,
+    address: document.getElementById(prefix+'Address').value,
+    orderDate: document.getElementById(prefix+'Date').value,
+    orderNo: document.getElementById(prefix+'OrderNo').value,
+    contact: document.getElementById(prefix+'Contact').value
+  };
+}
+
+function gatherRows(bodyEl){
+  return [...bodyEl.children].map(tr => {
     const obj = {};
     tr.querySelectorAll('input').forEach(inp => obj[inp.dataset.field] = inp.value);
     return obj;
   }).filter(r => r.code || r.name);
+}
 
-  if (rowsData.length === 0){ exportStatus.textContent = 'Chưa có dòng sản phẩm nào.'; return; }
+function sumQty(rowsFlat){
+  return rowsFlat.reduce((sum, r) => {
+    const n = parseFloat(String(r.qty).replace(/[^\d.]/g, ''));
+    return sum + (isNaN(n) ? 0 : n);
+  }, 0);
+}
 
-  const company = document.getElementById('hCompany').value;
-  const phoneLine = document.getElementById('hPhoneLine').value;
-  const customer = document.getElementById('hCustomer').value;
-  const address = document.getElementById('hAddress').value;
-  const orderDate = document.getElementById('hDate').value;
-  const orderNo = document.getElementById('hOrderNo').value;
-  const contact = document.getElementById('hContact').value;
+function computeYmd(orderDate){
+  return (orderDate || '').replace(/[^\d]/g, '') || 'yyyymmdd';
+}
+
+function filenameForDate(orderDate){
+  return `${computeYmd(orderDate)}_采购订单.xlsx`;
+}
+
+/* ====== Shared: build the Excel workbook (same template for PDF and image mode) ======
+   orderGroups = [{ orderNo, rows: [{code,name,spec,qty,unit,remark}, ...] }, ...]
+   — one file can hold several orders placed on the same day; 订单日期 merges across
+   every row in the file, 订单号 merges across just its own order's rows. */
+
+async function buildOrderWorkbook(header, orderGroups){
+  const { company, phoneLine, customer, address, orderDate, contact } = header;
+  const rowsFlat = orderGroups.flatMap(g => g.rows.map(r => ({ ...r, orderNo: g.orderNo })));
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('采购订单');
@@ -1050,10 +1257,10 @@ async function exportExcel(){
   });
 
   const startRow = 8;
-  rowsData.forEach((r, i) => {
+  rowsFlat.forEach((r, i) => {
     const rowIdx = startRow + i;
     const qtyNum = parseFloat(String(r.qty).replace(/[^\d.]/g, ''));
-    const rowVals = [orderDate, orderNo, r.code, r.name, r.spec, isNaN(qtyNum) ? '' : qtyNum, r.unit, r.remark];
+    const rowVals = [orderDate, r.orderNo, r.code, r.name, r.spec, isNaN(qtyNum) ? '' : qtyNum, r.unit, r.remark];
     rowVals.forEach((v, ci) => {
       const c = ws.getCell(rowIdx, ci+1);
       c.value = v;
@@ -1065,11 +1272,18 @@ async function exportExcel(){
     });
     ws.getRow(rowIdx).height = 40.5;
   });
-  const endRow = startRow + rowsData.length - 1;
-  if (rowsData.length > 1){
+  const endRow = startRow + rowsFlat.length - 1;
+  if (rowsFlat.length > 1){
     ws.mergeCells(startRow,1,endRow,1);
-    ws.mergeCells(startRow,2,endRow,2);
   }
+  let groupStart = startRow;
+  orderGroups.forEach(g => {
+    const groupEnd = groupStart + g.rows.length - 1;
+    if (g.rows.length > 1){
+      ws.mergeCells(groupStart,2,groupEnd,2);
+    }
+    groupStart = groupEnd + 1;
+  });
 
   const totalRow = endRow + 1;
   ws.mergeCells(totalRow,1,totalRow,5);
@@ -1081,11 +1295,7 @@ async function exportExcel(){
   for (let c=2;c<=5;c++){ ws.getCell(totalRow,c).border = border; }
 
   const sumCell = ws.getCell(totalRow,6);
-  const totalQty = rowsData.reduce((sum, r) => {
-    const n = parseFloat(String(r.qty).replace(/[^\d.]/g, ''));
-    return sum + (isNaN(n) ? 0 : n);
-  }, 0);
-  sumCell.value = { formula: `SUM(F${startRow}:F${endRow})`, result: totalQty };
+  sumCell.value = { formula: `SUM(F${startRow}:F${endRow})`, result: sumQty(rowsFlat) };
   sumCell.font = {name:'Times New Roman', size:11, bold:true};
   sumCell.alignment = {horizontal:'center', vertical:'middle'};
   sumCell.border = border;
@@ -1097,10 +1307,14 @@ async function exportExcel(){
   ws.getCell(contactRow,1).font = {name:'SimSun', size:11, bold:true};
 
   const buf = await wb.xlsx.writeBuffer();
+  return buf;
+}
+
+/* ====== Shared: download a workbook buffer via an anchor link ====== */
+
+function downloadWorkbook(exportStatus, buf, filename, note){
   const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const url = URL.createObjectURL(blob);
-  const ymd = (orderDate || '').replace(/[^\d]/g, '') || 'yyyymmdd';
-  const filename = `${ymd}_采购订单.xlsx`;
 
   const a = document.createElement('a');
   a.href = url;
@@ -1110,6 +1324,11 @@ async function exportExcel(){
   a.remove();
 
   exportStatus.innerHTML = '';
+  if (note){
+    const noteEl = document.createElement('div');
+    noteEl.textContent = note;
+    exportStatus.appendChild(noteEl);
+  }
   const msg = document.createElement('div');
   msg.textContent = '✓ File đã sẵn sàng. Nếu không tự tải xuống, bấm vào link bên dưới:';
   const link = document.createElement('a');
@@ -1126,6 +1345,77 @@ async function exportExcel(){
   exportStatus.appendChild(msg);
   exportStatus.appendChild(link);
 }
+
+/* ====== Export entry point used by both PDF and image mode (single order per file) ====== */
+
+async function runExport(exportStatus, header, rowsData){
+  if (rowsData.length === 0){ exportStatus.textContent = 'Chưa có dòng sản phẩm nào.'; return; }
+
+  const filename = filenameForDate(header.orderDate);
+  const buf = await buildOrderWorkbook(header, singleGroup(header, rowsData));
+  downloadWorkbook(exportStatus, buf, filename);
+}
+
+/* ====== Shared: on-screen preview styled like the exported Excel sheet ====== */
+
+function escapeHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function renderPreviewTable(header, orderGroups){
+  const rowsFlat = orderGroups.flatMap(g => g.rows);
+  if (rowsFlat.length === 0){
+    return '<p class="excel-preview-empty">Chưa có dòng sản phẩm nào để xem trước.</p>';
+  }
+  const { company, phoneLine, customer, address, orderDate, contact } = header;
+
+  const headHtml = [
+    ['订单日期','Ngày đặt hàng'], ['订单号','Số đơn hàng'], ['物料代码','Mã hàng'], ['品名','Tên sản phẩm'],
+    ['规格','Quy cách'], ['数量','Số lượng'], ['单位','Đơn vị'], ['备注','Ghi chú']
+  ].map(([h, sub]) => `<td class="ep-head">${escapeHtml(h)}<br><span style="font-weight:400;font-size:.85em;opacity:.75;">${escapeHtml(sub)}</span></td>`).join('');
+
+  let rowIdx = 0;
+  const rowsHtml = [];
+  orderGroups.forEach(g => {
+    g.rows.forEach((r, i) => {
+      const dateCell = rowIdx === 0 ? `<td rowspan="${rowsFlat.length}">${escapeHtml(orderDate)}</td>` : '';
+      const noCell = i === 0 ? `<td rowspan="${g.rows.length}">${escapeHtml(g.orderNo)}</td>` : '';
+      rowsHtml.push(`<tr>${dateCell}${noCell}<td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.spec)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.unit)}</td><td>${escapeHtml(r.remark)}</td></tr>`);
+      rowIdx++;
+    });
+  });
+
+  return `
+    <table class="excel-preview">
+      <tbody>
+        <tr><td colspan="8" class="ep-title">${escapeHtml(company)}</td></tr>
+        <tr><td colspan="8">${escapeHtml(phoneLine)}</td></tr>
+        <tr><td colspan="8">采购订单</td></tr>
+        <tr><td colspan="8" class="ep-left">客户：${escapeHtml(customer)}</td></tr>
+        <tr><td colspan="8" class="ep-left">送货地址：${escapeHtml(address)}</td></tr>
+        <tr>${headHtml}</tr>
+        ${rowsHtml.join('')}
+        <tr><td colspan="5" class="ep-right">合计</td><td>${sumQty(rowsFlat)}</td><td></td><td></td></tr>
+      </tbody>
+    </table>
+    <div class="excel-preview-contact">${escapeHtml(contact)}</div>
+  `;
+}
+
+function showPreview(header, orderGroups, filename){
+  document.getElementById('previewTitle').textContent = 'Xem trước Excel' + (filename ? ` — ${filename}` : '');
+  document.getElementById('previewContent').innerHTML = renderPreviewTable(header, orderGroups);
+  document.getElementById('previewOverlay').classList.remove('hidden');
+}
+
+function hidePreview(){
+  document.getElementById('previewOverlay').classList.add('hidden');
+}
+
+document.getElementById('previewCloseBtn').addEventListener('click', hidePreview);
+document.getElementById('previewOverlay').addEventListener('click', e => {
+  if (e.target.id === 'previewOverlay') hidePreview();
+});
 </script>
 </body>
 </html>
