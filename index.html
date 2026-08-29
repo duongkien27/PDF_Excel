@@ -523,14 +523,14 @@ async function exportExcel(){
 
   const thin = {style:'thin'};
   const border = {top:thin,bottom:thin,left:thin,right:thin};
-  const centerC = {horizontal:'center', vertical:'center'};
+  const centerC = {horizontal:'center', vertical:'middle'};
 
   const setRow = (rowIdx, text, opts) => {
     ws.mergeCells(rowIdx,1,rowIdx,8);
     const cell = ws.getCell(rowIdx,1);
     cell.value = text;
     cell.font = {name:'SimSun', size: opts.size||11, bold: opts.bold!==false};
-    cell.alignment = {horizontal: opts.align||'center', vertical:'center'};
+    cell.alignment = {horizontal: opts.align||'center', vertical:'middle'};
   };
 
   setRow(1, company, {size:18});
@@ -558,7 +558,7 @@ async function exportExcel(){
       const c = ws.getCell(rowIdx, ci+1);
       c.value = v;
       c.border = border;
-      c.alignment = {horizontal:'center', vertical:'center', wrapText:true};
+      c.alignment = {horizontal:'center', vertical:'middle', wrapText:true};
       if (ci===0 || ci===1 || ci===2){ c.font = {name:'Times New Roman', size:11, bold:true}; }
       else if (ci===5){ c.font = {name:'SimSun', size:11, bold:true}; }
       else { c.font = {name:'SimSun', size:11, bold:false}; }
@@ -576,7 +576,7 @@ async function exportExcel(){
   const totalLabel = ws.getCell(totalRow,1);
   totalLabel.value = '合计';
   totalLabel.font = {name:'SimSun', size:11, bold:true};
-  totalLabel.alignment = {horizontal:'right', vertical:'center'};
+  totalLabel.alignment = {horizontal:'right', vertical:'middle'};
   totalLabel.border = border;
   for (let c=2;c<=5;c++){ ws.getCell(totalRow,c).border = border; }
 
@@ -589,7 +589,7 @@ async function exportExcel(){
   // on open (mobile spreadsheet apps, some previewers) would otherwise show a blank cell
   sumCell.value = { formula: `SUM(F${startRow}:F${endRow})`, result: totalQty };
   sumCell.font = {name:'Times New Roman', size:11, bold:true};
-  sumCell.alignment = {horizontal:'center', vertical:'center'};
+  sumCell.alignment = {horizontal:'center', vertical:'middle'};
   sumCell.border = border;
   ws.getCell(totalRow,7).border = border;
   ws.getCell(totalRow,8).border = border;
