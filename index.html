@@ -534,6 +534,7 @@ async function exportExcel(){
   };
 
   setRow(1, company, {size:18});
+  ws.getRow(1).height = 22.5;
   setRow(2, phoneLine, {size:11});
   setRow(3, '采购订单', {size:11});
   setRow(4, '客户：' + customer + ' ', {size:11, align:'left'});
@@ -557,11 +558,12 @@ async function exportExcel(){
       const c = ws.getCell(rowIdx, ci+1);
       c.value = v;
       c.border = border;
-      c.alignment = {horizontal:'center', vertical:'center', wrapText: (ci===3||ci===4)};
+      c.alignment = {horizontal:'center', vertical:'center', wrapText:true};
       if (ci===0 || ci===1 || ci===2){ c.font = {name:'Times New Roman', size:11, bold:true}; }
       else if (ci===5){ c.font = {name:'SimSun', size:11, bold:true}; }
       else { c.font = {name:'SimSun', size:11, bold:false}; }
     });
+    ws.getRow(rowIdx).height = 40.5;
   });
   const endRow = startRow + rowsData.length - 1;
   if (rowsData.length > 1){
