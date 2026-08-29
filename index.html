@@ -208,6 +208,13 @@
   .order-block.order-block-duplicate{border-color:#e2b7ab;background:#fdf3f0;}
   .dup-warning{color:#b3492f;font-size:.75rem;margin-bottom:8px;}
   .small-btn{font-size:.78rem;padding:5px 10px;}
+
+  /* --- Multi-image queue: save/advance bar --- */
+  .queue-nav{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+    margin-bottom:14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fdfcfa;
+  }
+  .queue-status{font-size:.85rem;color:var(--muted);}
 </style>
 </head>
 <body>
@@ -245,6 +252,13 @@
     <div class="status" id="status"></div>
   </div>
 
+  <!-- Image queue list (multiple images uploaded at once, hidden by default) -->
+  <div class="card hidden" id="imageQueueCard">
+    <h2>Danh sách ảnh đã tải lên</h2>
+    <ul class="batch-list" id="imageQueueList"></ul>
+    <p class="note">Nhập dữ liệu cho từng ảnh, bấm <strong>Lưu dữ liệu ảnh này</strong> khi xong để đánh dấu hoàn tất và tự động chuyển sang ảnh tiếp theo. Bấm vào một ảnh trong danh sách bất cứ lúc nào để quay lại sửa.</p>
+  </div>
+
   <!-- Image preview split view (hidden by default) -->
   <div class="split-view hidden" id="imageSection">
     <div class="preview-panel" id="previewPanel">
@@ -262,6 +276,10 @@
       </div>
     </div>
     <div class="form-panel" id="formPanel">
+      <div class="queue-nav hidden" id="queueNav">
+        <span class="queue-status" id="queueStatusText"></span>
+        <button class="primary" id="saveImageBtn">💾 Lưu dữ liệu ảnh này</button>
+      </div>
       <!-- Tabs for switching between company info, order/product entry, and export -->
       <div class="img-tab-bar">
         <button class="img-tab active" data-tab="info">Thông tin chung</button>
@@ -428,7 +446,12 @@ const itemsBody = document.getElementById('itemsBody');
 const itemCount = document.getElementById('itemCount');
 const mainWrap = document.getElementById('mainWrap');
 
-let currentMode = null; // 'pdf' or 'image'
+let currentMode = null; // 'pdf', 'image', 'image-queue', or 'batch'
+
+// Multi-image queue state: populated only when 2+ images are uploaded together.
+// Each item: { file, dataUrl, orders: null|[{orderDate,orderNo,rows}], status: 'pending'|'done' }
+let imageQueue = [];
+let imageQueueIndex = -1;
 
 dropZone.addEventListener('click', () => fileInput.click());
 ['dragenter','dragover'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('drag'); }));
@@ -443,6 +466,7 @@ function isImageFile(file){
 const DEFAULT_HEADER = {
   company: '东莞市西南纸品装有限公司',
   phoneLine: '电话：刘生13923899278',
+  customer: '深圳市新恒声电子科技有限公司',
   address: '宝安区石岩料坑大道26号百利恒泰207',
   contact: '联系人：刘生'
 };
@@ -457,11 +481,18 @@ function handleFiles(fileList){
   const files = Array.from(fileList);
   if (files.length === 0) return;
   hideAllSections();
-  if (files.length === 1 && !isExcelFile(files[0])){
+
+  if (files.length === 1){
     handleSingleFile(files[0]);
-  } else {
-    handleBatchFiles(files);
+    return;
   }
+
+  const imageFiles = files.filter(isImageFile);
+  if (imageFiles.length > 1){
+    handleImageQueue(imageFiles);
+    return;
+  }
+  handleBatchFiles(files);
 }
 
 async function handleSingleFile(file){
@@ -563,7 +594,11 @@ function hideAllSections(){
   document.getElementById('exportCard').classList.add('hidden');
   document.getElementById('imageSection').classList.add('hidden');
   document.getElementById('batchCard').classList.add('hidden');
+  document.getElementById('imageQueueCard').classList.add('hidden');
+  document.getElementById('queueNav').classList.add('hidden');
   mainWrap.classList.remove('wide');
+  imageQueue = [];
+  imageQueueIndex = -1;
 }
 
 /* ====== BATCH MODE (multiple PDF and/or Excel files uploaded at once) ======
@@ -776,6 +811,121 @@ function handleImage(file){
   reader.readAsDataURL(file);
 }
 
+/* ====== IMAGE QUEUE MODE (multiple images uploaded together) ======
+   Each image is entered and saved one at a time; only saved ("done") images feed
+   the final Excel output, grouped/deduped the same way as batch mode. */
+
+async function handleImageQueue(files){
+  currentMode = 'image-queue';
+  mainWrap.classList.add('wide');
+  imageQueue = files.map(file => ({ file, dataUrl: null, orders: null, status: 'pending' }));
+  imageQueueIndex = -1;
+
+  document.getElementById('imageQueueCard').classList.remove('hidden');
+  document.getElementById('queueNav').classList.remove('hidden');
+  statusEl.textContent = `Đang tải ${files.length} ảnh…`;
+
+  await Promise.all(imageQueue.map(item => new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => { item.dataUrl = e.target.result; resolve(); };
+    reader.readAsDataURL(item.file);
+  })));
+
+  fillImageDefaults();
+  loadQueueImage(0);
+  statusEl.textContent = `Đã tải ${files.length} ảnh — nhập dữ liệu từng ảnh rồi bấm "Lưu dữ liệu ảnh này" để chuyển ảnh tiếp theo.`;
+}
+
+function renderImageQueueList(){
+  const list = document.getElementById('imageQueueList');
+  list.innerHTML = '';
+  imageQueue.forEach((item, idx) => {
+    const li = document.createElement('li');
+    const isActive = idx === imageQueueIndex;
+    const icon = item.status === 'done' ? '✅' : (isActive ? '✏️' : '⏳');
+    const totalRows = item.orders ? item.orders.reduce((n,o) => n + o.rows.length, 0) : 0;
+    const summary = item.orders ? ` — ${item.orders.length} mã đơn, ${totalRows} dòng` : '';
+    const label = document.createElement('span');
+    label.className = 'batch-item-label';
+    label.textContent = `${icon} ${item.file.name}${summary}`;
+    const actions = document.createElement('span');
+    actions.className = 'batch-item-actions';
+    const openBtn = document.createElement('button');
+    openBtn.className = 'plain';
+    openBtn.textContent = isActive ? 'Đang mở' : 'Mở';
+    openBtn.disabled = isActive;
+    openBtn.onclick = () => goToQueueImage(idx);
+    actions.appendChild(openBtn);
+    li.appendChild(label);
+    li.appendChild(actions);
+    list.appendChild(li);
+  });
+}
+
+function loadQueueImage(idx){
+  imageQueueIndex = idx;
+  const item = imageQueue[idx];
+  const img = document.getElementById('previewImg');
+  img.src = item.dataUrl;
+  img.onload = () => { zoomScale = 1; fitImageToPanel(); };
+  document.getElementById('imageSection').classList.remove('hidden');
+  rebuildImageEntryFromOrders(item.orders);
+  document.getElementById('queueStatusText').textContent = `Ảnh ${idx+1}/${imageQueue.length} — ${item.file.name}`;
+  renderImageQueueList();
+  document.querySelector('.img-tab[data-tab="products"]').click();
+}
+
+function goToQueueImage(idx){
+  if (idx === imageQueueIndex) return;
+  if (hasUnsavedQueueChanges()){
+    const ok = confirm('Ảnh hiện tại chưa được lưu. Chuyển sang ảnh khác sẽ mất dữ liệu chưa lưu. Tiếp tục?');
+    if (!ok) return;
+  }
+  loadQueueImage(idx);
+}
+
+function hasUnsavedQueueChanges(){
+  if (imageQueueIndex < 0) return false;
+  const current = imageQueue[imageQueueIndex];
+  const live = gatherImageOrders().map(o => ({ orderDate: o.orderDate, orderNo: o.orderNo, rows: o.rows }));
+  return JSON.stringify(live) !== JSON.stringify(current.orders || []);
+}
+
+// Rebuilds the date/order/product blocks from a previously saved snapshot (or empty if none yet).
+function rebuildImageEntryFromOrders(orders){
+  imgDatesContainer.innerHTML = '';
+  if (!orders || orders.length === 0){
+    addImgDateBlock();
+    return;
+  }
+  const byDate = new Map();
+  orders.forEach(o => {
+    if (!byDate.has(o.orderDate)) byDate.set(o.orderDate, []);
+    byDate.get(o.orderDate).push({ orderNo: o.orderNo, rows: o.rows });
+  });
+  byDate.forEach((ordersForDate, orderDate) => addImgDateBlock({ orderDate, orders: ordersForDate }));
+}
+
+document.getElementById('saveImageBtn').addEventListener('click', () => {
+  if (imageQueueIndex < 0) return;
+  const orders = gatherImageOrders().map(o => ({ orderDate: o.orderDate, orderNo: o.orderNo, rows: o.rows }));
+  const current = imageQueue[imageQueueIndex];
+  current.orders = orders;
+  current.status = 'done';
+  renderImageQueueList();
+
+  const nextIdx = imageQueue.findIndex((item, i) => i > imageQueueIndex && item.status !== 'done');
+  const fallbackIdx = nextIdx !== -1 ? nextIdx : imageQueue.findIndex(item => item.status !== 'done');
+
+  if (fallbackIdx === -1){
+    statusEl.textContent = `✓ Đã lưu "${current.file.name}". Tất cả ${imageQueue.length} ảnh đã nhập xong — vào tab "Xuất Excel" để tải file.`;
+    document.querySelector('.img-tab[data-tab="export"]').click();
+  } else {
+    statusEl.textContent = `✓ Đã lưu "${current.file.name}".`;
+    loadQueueImage(fallbackIdx);
+  }
+});
+
 function fitImageToPanel(){
   const body = document.getElementById('previewBody');
   const img = document.getElementById('previewImg');
@@ -845,7 +995,7 @@ function fillImageDefaults(){
   document.getElementById('imgPhoneLine').value = DEFAULT_HEADER.phoneLine;
   document.getElementById('imgContact').value = DEFAULT_HEADER.contact;
   document.getElementById('imgAddress').value = DEFAULT_HEADER.address;
-  document.getElementById('imgCustomer').value = '';
+  document.getElementById('imgCustomer').value = DEFAULT_HEADER.customer;
   // reset the nested date/order/product entry to one empty date with one empty order
   imgDatesContainer.innerHTML = '';
   addImgDateBlock();
@@ -961,11 +1111,15 @@ function refreshImageOutputs(){
   });
 
   const header = gatherOrderData('img');
-  const orders = gatherImageOrders();
+  // In queue mode, only images explicitly saved ("done") feed the export; otherwise
+  // (single image) read straight from the live form, as before.
+  const orders = imageQueue.length > 0
+    ? imageQueue.filter(item => item.status === 'done').flatMap(item => item.orders || [])
+    : gatherImageOrders();
   const outputs = groupIntoOutputs(orders, header);
 
   orders.forEach(o => {
-    if (!o._duplicate || !o._el) return;
+    if (!o._duplicate || !o._el) return; // only live (non-queue) orders carry a DOM reference
     o._el.classList.add('order-block-duplicate');
     const warn = document.createElement('div');
     warn.className = 'dup-warning';
@@ -975,11 +1129,14 @@ function refreshImageOutputs(){
 
   if (outputs.length === 0){
     outputList.innerHTML = '';
-    exportStatus.textContent = 'Chưa có dòng sản phẩm nào để xuất.';
+    exportStatus.textContent = imageQueue.length > 0
+      ? 'Chưa có ảnh nào được lưu dữ liệu.'
+      : 'Chưa có dòng sản phẩm nào để xuất.';
     return;
   }
 
-  exportStatus.textContent = '';
+  const dupCount = orders.filter(o => o._duplicate).length;
+  exportStatus.textContent = dupCount > 0 ? `⚠ Đã bỏ qua ${dupCount} mã đơn trùng khi gộp.` : '';
   renderOutputList(outputList, exportStatus, outputs);
   document.getElementById('imgDownloadAllBtn').onclick = downloadAllOutputs(exportStatus, outputs);
 }
