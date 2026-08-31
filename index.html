@@ -167,13 +167,20 @@
   .modal-close{background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--muted);}
   .modal-close:hover{color:var(--accent);}
   .modal-content{padding:18px;overflow:auto;}
-  table.excel-preview{border-collapse:collapse;width:100%;font-size:.82rem;}
-  table.excel-preview td{border:1px solid #999;padding:6px 8px;text-align:center;vertical-align:middle;}
-  table.excel-preview .ep-title{font-weight:700;font-size:1.15em;}
+  table.excel-preview{border-collapse:collapse;width:100%;font-size:.82rem;line-height:1.5;}
+  table.excel-preview td{
+    border:1px solid #999;padding:9px 11px;
+    text-align:center;vertical-align:middle;
+  }
+  table.excel-preview .ep-title{font-weight:700;font-size:1.15em;padding:12px 11px;}
   table.excel-preview .ep-plain{border:none;}
   table.excel-preview .ep-left{text-align:left;}
-  table.excel-preview .ep-right{text-align:right;}
-  table.excel-preview .ep-head{background:#f5f2ea;font-weight:600;}
+  table.excel-preview .ep-right{text-align:right;font-weight:600;}
+  table.excel-preview .ep-head{background:#f5f2ea;font-weight:600;padding:10px 11px;white-space:nowrap;}
+  /* Month view groups can span many rows — pin the label to the top of its block. */
+  /* Date / order-number cells span many rows — keep them centred like a merged Excel
+     cell, and stop the date wrapping into two lines. */
+  table.excel-preview .ep-group{vertical-align:middle;font-weight:600;white-space:nowrap;background:#fdfcfa;}
   .excel-preview-contact{margin-top:10px;font-weight:600;font-size:.82rem;}
   .excel-preview-empty{color:var(--muted);font-size:.85rem;}
 
@@ -295,6 +302,14 @@
       </div>
     </div>
     <div class="status" id="status"></div>
+  </div>
+
+  <!-- Monthly archive: every per-date Excel that gets saved/downloaded is folded in here -->
+  <div class="card hidden" id="monthlyCard">
+    <h2>Dữ liệu hàng hoá theo tháng</h2>
+    <ul class="batch-list" id="monthlyList"></ul>
+    <div class="status" id="monthlyStatus"></div>
+    <p class="note">Mỗi khi bạn lưu hoặc tải một file Excel theo ngày, đơn hàng trong đó được tự động cộng dồn vào dữ liệu của tháng tương ứng. Đơn trùng ngày và trùng số đơn sẽ được ghi đè thay vì nhân đôi.</p>
   </div>
 
   <!-- Image queue list (multiple images uploaded at once, hidden by default) -->
@@ -552,7 +567,9 @@ function handleFiles(fileList){
   if (files.length === 0) return;
   hideAllSections();
 
-  if (files.length === 1){
+  // A lone Excel file still goes through the batch reader — that is the only path that
+  // knows how to read an existing workbook back.
+  if (files.length === 1 && !isExcelFile(files[0])){
     handleSingleFile(files[0]);
     return;
   }
@@ -623,7 +640,8 @@ async function parseExcelFile(file){
   await wb.xlsx.load(buf);
   const ws = wb.worksheets[0];
   if (!ws) throw new Error('Không đọc được sheet nào trong file.');
-  const readVal = (r,c) => { const v = ws.getCell(r,c).value; return v == null ? '' : String(v).trim(); };
+  const readRaw = (r,c) => ws.getCell(r,c).value;
+  const readVal = (r,c) => { const v = readRaw(r,c); return v == null ? '' : String(v).trim(); };
 
   const company = readVal(1,1);
   const phoneLine = readVal(2,1);
@@ -637,7 +655,7 @@ async function parseExcelFile(file){
   for (; ; row++){
     const code = readVal(row, 3);
     if (!code || code === '合计') break;
-    if (!orderDate) orderDate = readVal(row, 1);
+    if (!orderDate) orderDate = normalizeOrderDate(readRaw(row, 1));
     const orderNo = readVal(row, 2);
     const rowData = { code, name: readVal(row,4), spec: readVal(row,5), qty: readVal(row,6), unit: readVal(row,7), remark: readVal(row,8) };
     if (cur && cur.orderNo === orderNo){
@@ -758,7 +776,15 @@ async function handleBatchFiles(files){
   renderOutputList(outputList, batchStatus, outputs);
   document.getElementById('batchDownloadAllBtn').onclick = downloadAllOutputs(batchStatus, outputs);
 
+  // Fold into the monthly store as soon as the per-date files are worked out, so the
+  // month reflects everything that was read — not only what the user later downloads.
+  const months = new Set();
+  outputs.forEach(out => archiveOutput(out).forEach(mk => months.add(mk)));
+
   statusEl.textContent = `Đã đọc ${eligibleFiles.length} file — gộp thành ${outputs.length} file Excel theo ngày.`;
+  if (months.size){
+    batchStatus.textContent = `✓ Đã cộng dồn vào dữ liệu tháng: ${[...months].sort().map(formatMonthKey).join(', ')}.`;
+  }
 }
 
 function buildBatchHeader(sampleOrder){
@@ -836,6 +862,7 @@ function renderOutputList(outputList, statusEl, outputs){
     downloadBtn.onclick = async () => {
       const buf = await buildOrderWorkbook(out.header, out.orderGroups);
       downloadWorkbook(statusEl, buf, out.filename);
+      archiveOutput(out);
     };
     actions.appendChild(previewBtn);
     actions.appendChild(downloadBtn);
@@ -850,9 +877,226 @@ function downloadAllOutputs(statusEl, outputs){
     for (const out of outputs){
       const buf = await buildOrderWorkbook(out.header, out.orderGroups);
       downloadWorkbook(statusEl, buf, out.filename);
+      archiveOutput(out);
       await new Promise(r => setTimeout(r, 300));
     }
   };
+}
+
+/* ====== Monthly archive ======
+   Every per-date Excel that gets saved or downloaded is folded into a per-month
+   store in localStorage, so the month's orders accumulate across sessions and
+   across upload batches. Shape:
+     { "202608": { header: {...}, orders: [{ orderDate, orderNo, rows, savedAt }] } } */
+
+const MONTH_DATA_KEY = 'monthlyOrderArchive';
+
+function loadMonthlyArchive(){
+  try {
+    const raw = localStorage.getItem(MONTH_DATA_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch(e){ return {}; }
+}
+
+function saveMonthlyArchive(archive){
+  try { localStorage.setItem(MONTH_DATA_KEY, JSON.stringify(archive)); }
+  catch(e){ console.warn('Không lưu được dữ liệu tháng:', e); }
+}
+
+function monthKeyOf(orderDate){
+  const ymd = computeYmd(orderDate);
+  return /^\d{8}$/.test(ymd) ? ymd.slice(0, 6) : null;
+}
+
+function formatMonthKey(mk){
+  return `${mk.slice(4,6)}/${mk.slice(0,4)}`;
+}
+
+// Identity of an order inside a month: date + order number. When the order number is
+// blank there is nothing stable to match on, so fall back to the product codes so a
+// repeated download updates the same entry instead of appending a duplicate.
+function orderIdentity(o){
+  const ymd = computeYmd(o.orderDate);
+  const no = (o.orderNo || '').trim().toLowerCase();
+  return no ? `${ymd}|${no}` : `${ymd}||${(o.rows || []).map(r => r.code).join(',')}`;
+}
+
+// orders: [{ orderDate, orderNo, rows }]
+function archiveOrders(orders, header){
+  const usable = (orders || []).filter(o => o.rows && o.rows.length && monthKeyOf(o.orderDate));
+  if (usable.length === 0) return [];
+
+  const archive = loadMonthlyArchive();
+  const touched = [];
+  usable.forEach(o => {
+    const mk = monthKeyOf(o.orderDate);
+    if (!archive[mk]) archive[mk] = { header: {}, orders: [] };
+    const entry = archive[mk];
+    if (header){
+      ['company','phoneLine','customer','address','contact'].forEach(k => {
+        if (header[k]) entry.header[k] = header[k];
+      });
+    }
+    const rec = {
+      // Store the canonical form so the same day from differently-formatted sources
+      // shares one date block in the month sheet.
+      orderDate: normalizeOrderDate(o.orderDate) || o.orderDate,
+      orderNo: o.orderNo || '',
+      rows: o.rows,
+      savedAt: new Date().toISOString()
+    };
+    const idx = entry.orders.findIndex(x => orderIdentity(x) === orderIdentity(rec));
+    if (idx >= 0) entry.orders[idx] = rec; else entry.orders.push(rec);
+    if (!touched.includes(mk)) touched.push(mk);
+  });
+
+  saveMonthlyArchive(archive);
+  renderMonthlyList();
+  return touched;
+}
+
+// An `out` from groupIntoOutputs carries the date on its header and the orders in orderGroups.
+function archiveOutput(out){
+  const orders = out.orderGroups.map(g => ({
+    orderDate: out.header.orderDate,
+    orderNo: g.orderNo,
+    rows: g.rows
+  }));
+  return archiveOrders(orders, out.header);
+}
+
+function renderMonthlyList(){
+  const card = document.getElementById('monthlyCard');
+  const list = document.getElementById('monthlyList');
+  const archive = loadMonthlyArchive();
+  const keys = Object.keys(archive).filter(k => archive[k].orders && archive[k].orders.length).sort().reverse();
+
+  list.innerHTML = '';
+  card.classList.toggle('hidden', keys.length === 0);
+  if (keys.length === 0) return;
+
+  keys.forEach(mk => {
+    const entry = archive[mk];
+    const rowCount = entry.orders.reduce((n,o) => n + o.rows.length, 0);
+    const qty = sumQty(entry.orders.flatMap(o => o.rows));
+    const dates = new Set(entry.orders.map(o => computeYmd(o.orderDate)));
+
+    const li = document.createElement('li');
+    const label = document.createElement('span');
+    label.className = 'batch-item-label';
+    label.textContent = `📅 Tháng ${formatMonthKey(mk)} — ${dates.size} ngày, ${entry.orders.length} đơn hàng, ${rowCount} dòng, tổng ${qty.toLocaleString('vi-VN')}`;
+
+    const actions = document.createElement('span');
+    actions.className = 'batch-item-actions';
+    const previewBtn = document.createElement('button');
+    previewBtn.className = 'plain';
+    previewBtn.textContent = '👁 Xem trước';
+    previewBtn.onclick = () => showMonthPreview(mk);
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'plain';
+    downloadBtn.textContent = '⬇ Tải cả tháng';
+    downloadBtn.onclick = () => downloadMonth(mk);
+    const delBtn = document.createElement('button');
+    delBtn.className = 'plain';
+    delBtn.textContent = '🗑 Xoá';
+    delBtn.onclick = () => {
+      if (!confirm(`Xoá toàn bộ dữ liệu tháng ${formatMonthKey(mk)}? Thao tác này không hoàn tác được.`)) return;
+      const cur = loadMonthlyArchive();
+      delete cur[mk];
+      saveMonthlyArchive(cur);
+      renderMonthlyList();
+    };
+    actions.appendChild(previewBtn);
+    actions.appendChild(downloadBtn);
+    actions.appendChild(delBtn);
+    li.appendChild(label);
+    li.appendChild(actions);
+    list.appendChild(li);
+  });
+}
+
+// Orders of a month, oldest day first, each group carrying its own date so the sheet
+// merges the date column per day.
+function monthOrderGroups(entry){
+  return [...entry.orders]
+    .sort((a,b) => computeYmd(a.orderDate).localeCompare(computeYmd(b.orderDate)))
+    .map(o => ({ orderNo: o.orderNo, rows: o.rows, orderDate: o.orderDate }));
+}
+
+async function downloadMonth(mk){
+  const entry = loadMonthlyArchive()[mk];
+  if (!entry || !entry.orders || !entry.orders.length) return;
+  const h = entry.header || {};
+  const header = {
+    company: h.company || DEFAULT_HEADER.company,
+    phoneLine: h.phoneLine || DEFAULT_HEADER.phoneLine,
+    customer: h.customer || '',
+    address: h.address || DEFAULT_HEADER.address,
+    contact: h.contact || DEFAULT_HEADER.contact,
+    orderDate: ''
+  };
+  const buf = await buildOrderWorkbook(header, monthOrderGroups(entry));
+  downloadWorkbook(document.getElementById('monthlyStatus'), buf, `${mk}_采购订单_月度.xlsx`);
+}
+
+// Month view: like the per-date sheet, but 订单日期 spans each day's block and
+// 订单号 spans each order within that day.
+function renderMonthTable(mk, entry){
+  const byDate = new Map();
+  entry.orders.forEach(o => {
+    const ymd = computeYmd(o.orderDate);
+    if (!byDate.has(ymd)) byDate.set(ymd, []);
+    byDate.get(ymd).push(o);
+  });
+  const dates = [...byDate.keys()].sort();
+  const allRows = entry.orders.flatMap(o => o.rows);
+
+  const headHtml = [
+    ['订单日期','Ngày đặt hàng'], ['订单号','Số đơn hàng'], ['物料代码','Mã hàng'], ['品名','Tên sản phẩm'],
+    ['规格','Quy cách'], ['数量','Số lượng'], ['单位','Đơn vị'], ['备注','Ghi chú']
+  ].map(([h, sub]) => `<td class="ep-head">${escapeHtml(h)}<br><span style="font-weight:400;font-size:.85em;opacity:.75;">${escapeHtml(sub)}</span></td>`).join('');
+
+  const bodyHtml = [];
+  dates.forEach(ymd => {
+    const orders = byDate.get(ymd);
+    const dateRowCount = orders.reduce((n,o) => n + o.rows.length, 0);
+    let firstOfDate = true;
+    orders.forEach(o => {
+      o.rows.forEach((r, i) => {
+        const dateCell = firstOfDate
+          ? `<td class="ep-group" rowspan="${dateRowCount}">${escapeHtml(o.orderDate)}</td>` : '';
+        const noCell = i === 0
+          ? `<td class="ep-group" rowspan="${o.rows.length}">${escapeHtml(o.orderNo)}</td>` : '';
+        bodyHtml.push(`<tr>${dateCell}${noCell}<td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.spec)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.unit)}</td><td>${escapeHtml(r.remark)}</td></tr>`);
+        firstOfDate = false;
+      });
+    });
+  });
+
+  const h = entry.header || {};
+  return `
+    <p class="note" style="margin-top:0;">Tháng ${escapeHtml(formatMonthKey(mk))} — ${dates.length} ngày, ${entry.orders.length} đơn hàng, ${allRows.length} dòng sản phẩm.</p>
+    <table class="excel-preview">
+      <tbody>
+        <tr><td colspan="8" class="ep-title">${escapeHtml(h.company || '')}</td></tr>
+        <tr><td colspan="8" class="ep-left">客户：${escapeHtml(h.customer || '')}</td></tr>
+        <tr>${headHtml}</tr>
+        ${bodyHtml.join('')}
+        <tr><td colspan="5" class="ep-right">合计</td><td>${sumQty(allRows)}</td><td></td><td></td></tr>
+      </tbody>
+    </table>
+  `;
+}
+
+function showMonthPreview(mk){
+  const archive = loadMonthlyArchive();
+  const entry = archive[mk];
+  document.getElementById('previewTitle').textContent = `Đơn hàng tháng ${formatMonthKey(mk)}`;
+  document.getElementById('previewContent').innerHTML = (entry && entry.orders && entry.orders.length)
+    ? renderMonthTable(mk, entry)
+    : '<p class="excel-preview-empty">Chưa có dữ liệu cho tháng này.</p>';
+  document.getElementById('previewOverlay').classList.remove('hidden');
 }
 
 /* ====== IMAGE MODE ====== */
@@ -983,6 +1227,7 @@ document.getElementById('saveImageBtn').addEventListener('click', () => {
   current.orders = orders;
   current.status = 'done';
   renderImageQueueList();
+  archiveOrders(orders, gatherOrderData('img'));
 
   const nextIdx = imageQueue.findIndex((item, i) => i > imageQueueIndex && item.status !== 'done');
   const fallbackIdx = nextIdx !== -1 ? nextIdx : imageQueue.findIndex(item => item.status !== 'done');
@@ -1160,7 +1405,8 @@ document.getElementById('imgAddDateBtn').addEventListener('click', () => addImgD
 function gatherImageOrders(){
   const orders = [];
   imgDatesContainer.querySelectorAll('.date-block').forEach(dateBlock => {
-    const orderDate = dateBlock.querySelector('.date-input').value;
+    const rawDate = dateBlock.querySelector('.date-input').value;
+    const orderDate = normalizeOrderDate(rawDate) || rawDate;
     dateBlock.querySelectorAll('.order-block').forEach(orderBlock => {
       const orderNo = orderBlock.querySelector('.order-input').value;
       const rows = gatherRows(orderBlock.querySelector('tbody'));
@@ -1234,11 +1480,7 @@ function parseHeader(fullText){
   const orderNo = grab(/订单编码[：:]\s*([A-Za-z0-9\-]+)/);
   const customer = grab(/甲方[：:]\s*(.+?)(?=订单编码|联系人|电话|$)/);
   const address = grab(/交货地点[：:]\s*(.+?)(?=包装与标识要求|$)/);
-  let date = grab(/日期[：:]\s*(\d{4}\/\d{1,2}\/\d{1,2})/);
-  if (date){
-    const [y,m,d] = date.split('/');
-    date = `${y}.${m.padStart(2,'0')}.${d.padStart(2,'0')}`;
-  }
+  const date = normalizeOrderDate(grab(/日期[：:]\s*(\d{4}\/\d{1,2}\/\d{1,2})/));
   return { orderNo, customer, address, orderDate: date };
 }
 
@@ -1609,7 +1851,7 @@ function gatherOrderData(prefix){
     phoneLine: val('PhoneLine'),
     customer: val('Customer'),
     address: val('Address'),
-    orderDate: val('Date'),
+    orderDate: normalizeOrderDate(val('Date')) || val('Date'),
     orderNo: val('OrderNo'),
     contact: val('Contact')
   };
@@ -1630,8 +1872,61 @@ function sumQty(rowsFlat){
   }, 0);
 }
 
+/* ====== Date normalisation ======
+   Order dates arrive in many shapes: "2026.07.17" from our own exports, "2026/7/17"
+   from PDFs, "27/07/2026" typed by hand, and real Date objects or Excel serial numbers
+   from spreadsheet cells. Everything is folded to "yyyy.mm.dd" here so grouping by day,
+   month bucketing and file naming all agree. Returns '' when nothing sensible is found. */
+function normalizeOrderDate(value){
+  if (value == null || value === '') return '';
+
+  // ExcelJS wraps some cells: formula results, rich text, hyperlinks.
+  if (typeof value === 'object' && !(value instanceof Date)){
+    if (value.result != null) return normalizeOrderDate(value.result);
+    if (Array.isArray(value.richText)) return normalizeOrderDate(value.richText.map(t => t.text).join(''));
+    if (value.text != null) return normalizeOrderDate(value.text);
+    return '';
+  }
+
+  const build = (y, m, d) => {
+    if (y < 100) y += y < 70 ? 2000 : 1900;
+    if (y < 1900 || y > 2999 || m < 1 || m > 12 || d < 1 || d > 31) return '';
+    return `${y}.${String(m).padStart(2,'0')}.${String(d).padStart(2,'0')}`;
+  };
+
+  if (value instanceof Date){
+    return isNaN(value.getTime()) ? '' : build(value.getFullYear(), value.getMonth() + 1, value.getDate());
+  }
+
+  // Excel stores dates as days since 1899-12-30; the range keeps plain quantities out.
+  if (typeof value === 'number'){
+    if (!Number.isFinite(value) || value <= 20000 || value >= 80000) return '';
+    const d = new Date(Math.round((value - 25569) * 86400000));
+    return build(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+  }
+
+  const s = String(value).trim();
+  if (!s) return '';
+
+  const parts = s.match(/\d+/g);
+  if (!parts || parts.length < 3){
+    const compact = s.replace(/\D/g, '');
+    return compact.length === 8
+      ? build(+compact.slice(0,4), +compact.slice(4,6), +compact.slice(6,8))
+      : '';
+  }
+
+  const [a, b, c] = parts.map(Number);
+  if (parts[0].length === 4) return build(a, b, c);   // yyyy-mm-dd / yyyy.mm.dd / yyyy/m/d
+  // Day-first (27/07/2026) is the local convention; only fall back to month-first when
+  // the middle number cannot be a month.
+  if (b > 12 && a <= 12) return build(c, a, b);
+  return build(c, b, a);
+}
+
 function computeYmd(orderDate){
-  return (orderDate || '').replace(/[^\d]/g, '') || 'yyyymmdd';
+  const normalized = normalizeOrderDate(orderDate);
+  return normalized ? normalized.replace(/\./g, '') : 'yyyymmdd';
 }
 
 function filenameForDate(orderDate){
@@ -1645,7 +1940,11 @@ function filenameForDate(orderDate){
 
 async function buildOrderWorkbook(header, orderGroups){
   const { company, phoneLine, customer, address, orderDate, contact } = header;
-  const rowsFlat = orderGroups.flatMap(g => g.rows.map(r => ({ ...r, orderNo: g.orderNo })));
+  // A group may carry its own date (month sheets span many days); otherwise every row
+  // takes the header's date, which is the single-day case.
+  const rowsFlat = orderGroups.flatMap(g => g.rows.map(r => ({
+    ...r, orderNo: g.orderNo, orderDate: g.orderDate || orderDate
+  })));
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('采购订单');
@@ -1685,7 +1984,7 @@ async function buildOrderWorkbook(header, orderGroups){
   rowsFlat.forEach((r, i) => {
     const rowIdx = startRow + i;
     const qtyNum = parseFloat(String(r.qty).replace(/[^\d.]/g, ''));
-    const rowVals = [orderDate, r.orderNo, r.code, r.name, r.spec, isNaN(qtyNum) ? '' : qtyNum, r.unit, r.remark];
+    const rowVals = [r.orderDate, r.orderNo, r.code, r.name, r.spec, isNaN(qtyNum) ? '' : qtyNum, r.unit, r.remark];
     rowVals.forEach((v, ci) => {
       const c = ws.getCell(rowIdx, ci+1);
       c.value = v;
@@ -1698,8 +1997,16 @@ async function buildOrderWorkbook(header, orderGroups){
     ws.getRow(rowIdx).height = 40.5;
   });
   const endRow = startRow + rowsFlat.length - 1;
-  if (rowsFlat.length > 1){
-    ws.mergeCells(startRow,1,endRow,1);
+  // Merge the date column over each run of consecutive rows sharing a date. With one
+  // date that is the whole table, matching the per-day sheet.
+  let dateBlockStart = startRow;
+  for (let i = 1; i <= rowsFlat.length; i++){
+    const prev = rowsFlat[i-1], cur = rowsFlat[i];
+    if (!cur || cur.orderDate !== prev.orderDate){
+      const blockEnd = startRow + i - 1;
+      if (blockEnd > dateBlockStart) ws.mergeCells(dateBlockStart, 1, blockEnd, 1);
+      dateBlockStart = blockEnd + 1;
+    }
   }
   let groupStart = startRow;
   orderGroups.forEach(g => {
@@ -1779,6 +2086,7 @@ async function runExport(exportStatus, header, rowsData){
   const filename = filenameForDate(header.orderDate);
   const buf = await buildOrderWorkbook(header, singleGroup(header, rowsData));
   downloadWorkbook(exportStatus, buf, filename);
+  archiveOrders([{ orderDate: header.orderDate, orderNo: header.orderNo, rows: rowsData }], header);
 }
 
 /* ====== Shared: on-screen preview styled like the exported Excel sheet ====== */
@@ -1803,8 +2111,8 @@ function renderPreviewTable(header, orderGroups){
   const rowsHtml = [];
   orderGroups.forEach(g => {
     g.rows.forEach((r, i) => {
-      const dateCell = rowIdx === 0 ? `<td rowspan="${rowsFlat.length}">${escapeHtml(orderDate)}</td>` : '';
-      const noCell = i === 0 ? `<td rowspan="${g.rows.length}">${escapeHtml(g.orderNo)}</td>` : '';
+      const dateCell = rowIdx === 0 ? `<td class="ep-group" rowspan="${rowsFlat.length}">${escapeHtml(orderDate)}</td>` : '';
+      const noCell = i === 0 ? `<td class="ep-group" rowspan="${g.rows.length}">${escapeHtml(g.orderNo)}</td>` : '';
       rowsHtml.push(`<tr>${dateCell}${noCell}<td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.spec)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.unit)}</td><td>${escapeHtml(r.remark)}</td></tr>`);
       rowIdx++;
     });
@@ -2026,6 +2334,8 @@ document.getElementById('chatInput').addEventListener('keydown', e => {
     sendChatMessage();
   }
 });
+
+renderMonthlyList();
 
 (function initPriceChat(){
   try {
