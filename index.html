@@ -609,9 +609,9 @@ async function parsePdfFile(file){
   const lines = groupLines(items);
   const fullText = lines.map(l => l.items.map(i => i.str).join('')).join('\n');
   const header = parseHeader(fullText);
-  const columnEdges = await extractColumnEdges(pdf);
-  const rows = parseTable(lines, columnEdges);
-  return { ...header, rows, columnEdgeCount: columnEdges ? columnEdges.length : 0 };
+  const grid = await extractGrid(pdf);
+  const rows = parseTable(lines, grid);
+  return { ...header, rows, columnEdgeCount: grid.colEdges ? grid.colEdges.length : 0 };
 }
 
 /* Reads an existing .xlsx built by this tool (or a merged file with several orders inside)
@@ -1252,12 +1252,32 @@ function charMapWithSpans(line){
   return { text, spans, y: line.y };
 }
 
-async function extractColumnEdges(pdf){
+// Collapses near-identical coordinates (grid lines are often drawn twice, or as
+// adjacent hairlines) into single averaged positions.
+function mergeNearby(values, tolerance){
+  const sorted = [...values].sort((a,b) => a - b);
+  const out = [];
+  sorted.forEach(v => {
+    if (!out.length || v - out[out.length-1] > tolerance) out.push(v);
+    else out[out.length-1] = (out[out.length-1] + v) / 2;
+  });
+  return out;
+}
+
+/* Reads the table's drawn grid. Most generators draw rulings as very thin filled
+   rectangles: long+thin horizontally = a row separator, tall+thin vertically = a
+   column separator. Those give exact cell bounds — far more reliable than guessing
+   row extents from the spacing between product codes, since rows here vary a lot in
+   height. Falls back to deriving column edges from cell-sized rects when a PDF draws
+   whole cells instead of rulings.
+   Returns { colEdges: [x…] | null, rowLinesByPage: Map<pageNo, [y…] descending> }. */
+async function extractGrid(pdf){
   const OPS = pdfjsLib.OPS;
-  const rects = [];
+  const rectsByPage = new Map();
   for (let p = 1; p <= pdf.numPages; p++){
     const page = await pdf.getPage(p);
     const opList = await page.getOperatorList();
+    const rects = [];
     let ctm = [1,0,0,1,0,0];
     const stack = [];
     const mul = (m, n) => [
@@ -1289,22 +1309,42 @@ async function extractColumnEdges(pdf){
         }
       }
     }
+    rectsByPage.set(p, rects);
   }
-  const cells = rects.filter(r => {
-    const w = r.right - r.left, h = r.top - r.bottom;
-    return w > 10 && w < 400 && h > 3 && h < 200;
-  });
-  if (cells.length < 3) return null;
 
-  const raw = [];
-  cells.forEach(r => { raw.push(r.left); raw.push(r.right); });
-  raw.sort((a,b) => a - b);
-  const edges = [];
-  raw.forEach(v => {
-    if (!edges.length || v - edges[edges.length-1] > 2) edges.push(v);
-    else edges[edges.length-1] = (edges[edges.length-1] + v) / 2;
+  const LINE_THICKNESS = 3;
+  const vertX = [];
+  const rowLinesByPage = new Map();
+  const allRects = [];
+
+  rectsByPage.forEach((rects, p) => {
+    allRects.push(...rects);
+    const horiz = rects.filter(r => (r.right - r.left) > 50 && (r.top - r.bottom) <= LINE_THICKNESS);
+    const vert  = rects.filter(r => (r.top - r.bottom) > 20 && (r.right - r.left) <= LINE_THICKNESS);
+    vert.forEach(r => vertX.push((r.left + r.right) / 2));
+    if (horiz.length >= 2){
+      const ys = mergeNearby(horiz.map(r => (r.top + r.bottom) / 2), 2);
+      rowLinesByPage.set(p, ys.sort((a,b) => b - a));
+    }
   });
-  return edges.length >= 4 ? edges : null;
+
+  let colEdges = vertX.length >= 4 ? mergeNearby(vertX, 2) : null;
+
+  if (!colEdges){
+    // Fallback: PDFs that paint filled cells rather than rulings.
+    const cells = allRects.filter(r => {
+      const w = r.right - r.left, h = r.top - r.bottom;
+      return w > 10 && w < 400 && h > 3 && h < 200;
+    });
+    if (cells.length >= 3){
+      const raw = [];
+      cells.forEach(r => { raw.push(r.left); raw.push(r.right); });
+      const edges = mergeNearby(raw, 2);
+      colEdges = edges.length >= 4 ? edges : null;
+    }
+  }
+
+  return { colEdges, rowLinesByPage };
 }
 
 function findColumnSplit(intervals){
@@ -1331,7 +1371,11 @@ function normalizeUnit(u){
   return s;
 }
 
-function parseTable(lines, columnEdges){
+function parseTable(lines, grid){
+  grid = grid || {};
+  const columnEdges = grid.colEdges || null;
+  const rowLinesByPage = grid.rowLinesByPage || new Map();
+
   const headerLineIdx = lines.findIndex(l => {
     const t = l.items.map(i=>i.str).join('');
     return t.includes('产品编号') && t.includes('名称') && t.includes('规格型号');
@@ -1347,25 +1391,72 @@ function parseTable(lines, columnEdges){
   const anchors = bodyLines
     .map(l => ({ line: l, m: charMapWithSpans(l).text.match(codeRe) }))
     .filter(a => a.m)
-    .map(a => ({ y: a.line.y, code: a.m[0] }));
+    .map(a => ({ y: a.line.y, page: a.line.page, code: a.m[0] }));
   if (anchors.length === 0) return [];
 
-  const spacing = anchors.length > 1 ? Math.abs(anchors[0].y - anchors[1].y) : 20;
-  const rows = anchors.map((a, i) => ({
-    code: a.code, y: a.y,
-    top: i === 0 ? a.y + spacing / 2 : (anchors[i-1].y + a.y) / 2,
-    bottom: i === anchors.length - 1 ? a.y - spacing / 2 : (a.y + anchors[i+1].y) / 2,
-    cells: {}
-  }));
-
-  const edges = (columnEdges && columnEdges.length >= 4) ? columnEdges : null;
-  const colOf = (item) => {
-    if (!edges) return null;
-    const cx = item.x + (item.width || 0) / 2;
-    for (let i = 0; i < edges.length - 1; i++){
-      if (cx >= edges[i] && cx < edges[i+1]) return i;
+  // Prefer the drawn grid's horizontal rulings for row extents — rows vary a lot in
+  // height, so midpoints between product codes (which sit vertically centred in their
+  // cell) clip tall rows and leak their last text line into the next row.
+  const bandFor = (y, page) => {
+    const ys = rowLinesByPage.get(page);
+    if (!ys) return null;
+    for (let i = 0; i < ys.length - 1; i++){
+      if (y <= ys[i] && y >= ys[i+1]) return { top: ys[i], bottom: ys[i+1] };
     }
     return null;
+  };
+
+  const spacing = anchors.length > 1 ? Math.abs(anchors[0].y - anchors[1].y) : 20;
+  const rows = anchors.map((a, i) => {
+    const band = bandFor(a.y, a.page);
+    return {
+      code: a.code, y: a.y, page: a.page,
+      top: band ? band.top : (i === 0 ? a.y + spacing / 2 : (anchors[i-1].y + a.y) / 2),
+      bottom: band ? band.bottom : (i === anchors.length - 1 ? a.y - spacing / 2 : (a.y + anchors[i+1].y) / 2),
+      cells: {}
+    };
+  });
+
+  const bucketOf = (cx, edgeArr) => {
+    for (let i = 0; i < edgeArr.length - 1; i++){
+      if (cx >= edgeArr[i] && cx < edgeArr[i+1]) return i;
+    }
+    return null;
+  };
+  const headerRoleFor = (s) => {
+    if (s.includes('产品编号') || s.includes('物料')) return 'code';
+    if (s.includes('名称') || s.includes('品名')) return 'name';
+    if (s.includes('规格')) return 'spec';
+    if (s.includes('数量')) return 'qty';
+    if (s.includes('单位')) return 'unit';
+    if (s.includes('备注')) return 'remark';
+    return null;
+  };
+
+  let edges = (columnEdges && columnEdges.length >= 4) ? columnEdges.slice() : null;
+  if (edges){
+    // The vector-rect edges sometimes miss a real column boundary (e.g. no visible
+    // divider between 物料代码 and 品名 in some PDF exports), merging two columns into
+    // one bucket and corrupting every row's text. When two header labels with different
+    // roles land in the same bucket, split it at their midpoint.
+    const roleHits = headerLine.items
+      .map(it => ({ role: headerRoleFor(it.str), cx: it.x + (it.width || 0) / 2 }))
+      .filter(h => h.role)
+      .sort((a, b) => a.cx - b.cx);
+    for (let i = 1; i < roleHits.length; i++){
+      const prev = roleHits[i-1], cur = roleHits[i];
+      if (prev.role === cur.role) continue;
+      const prevBucket = bucketOf(prev.cx, edges);
+      if (prevBucket !== null && prevBucket === bucketOf(cur.cx, edges)){
+        edges.push((prev.cx + cur.cx) / 2);
+      }
+    }
+    edges.sort((a, b) => a - b);
+  }
+
+  const colOf = (item) => {
+    if (!edges) return null;
+    return bucketOf(item.x + (item.width || 0) / 2, edges);
   };
 
   const roleOf = {};
@@ -1373,13 +1464,8 @@ function parseTable(lines, columnEdges){
     headerLine.items.forEach(it => {
       const c = colOf(it);
       if (c === null) return;
-      const s = it.str;
-      if (s.includes('产品编号') || s.includes('物料')) roleOf[c] = 'code';
-      else if (s.includes('名称') || s.includes('品名')) roleOf[c] = 'name';
-      else if (s.includes('规格')) roleOf[c] = 'spec';
-      else if (s.includes('数量')) roleOf[c] = 'qty';
-      else if (s.includes('单位')) roleOf[c] = 'unit';
-      else if (s.includes('备注')) roleOf[c] = 'remark';
+      const role = headerRoleFor(it.str);
+      if (role) roleOf[c] = role;
     });
   }
 
@@ -1387,7 +1473,7 @@ function parseTable(lines, columnEdges){
 
   if (hasGrid){
     bodyLines.forEach(l => {
-      const row = rows.find(r => l.y <= r.top && l.y >= r.bottom);
+      const row = rows.find(r => r.page === l.page && l.y <= r.top && l.y >= r.bottom);
       if (!row) return;
       l.items.forEach(it => {
         const c = colOf(it);
@@ -1401,7 +1487,7 @@ function parseTable(lines, columnEdges){
       .sort((a,b) => b.y - a.y || a.x - b.x)
       .map(p => p.str).join('');
 
-    return rows.sort((a,b) => b.y - a.y).map(r => ({
+    return rows.sort((a,b) => a.page - b.page || b.y - a.y).map(r => ({
       code: r.code,
       name: join(r.cells.name),
       spec: join(r.cells.spec),
@@ -1416,7 +1502,7 @@ function parseTable(lines, columnEdges){
 
   bodyLines.forEach(l => {
     const cm = charMapWithSpans(l);
-    const row = rows.find(r => l.y <= r.top && l.y >= r.bottom);
+    const row = rows.find(r => r.page === l.page && l.y <= r.top && l.y >= r.bottom);
     if (!row) return;
     const codeMatch = cm.text.match(codeRe);
     const consumed = [];
@@ -1441,7 +1527,7 @@ function parseTable(lines, columnEdges){
   const bound = split !== null ? split : 1e9;
   const join = (parts) => parts.sort((a,b) => b.y - a.y || a.x - b.x).map(p => p.str).join('');
 
-  return rows.sort((a,b) => b.y - a.y).map(r => {
+  return rows.sort((a,b) => a.page - b.page || b.y - a.y).map(r => {
     const items = r.contentItems || [];
     return {
       code: r.code,
