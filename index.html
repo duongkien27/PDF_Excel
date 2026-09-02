@@ -73,7 +73,7 @@
   }
   table.items{width:100%;border-collapse:collapse;margin-top:6px;font-size:.85rem;}
   table.items th{background:#f5f2ea;font-weight:600;text-align:left;padding:6px 6px;border:1px solid var(--line);font-size:.76rem;color:var(--muted);}
-  table.items th .th-sub{display:block;font-weight:400;font-size:.68rem;color:var(--muted);opacity:.85;margin-top:1px;}
+  table.items th .th-sub, table.price-table th .th-sub{display:block;font-weight:400;font-size:.68rem;color:var(--muted);opacity:.85;margin-top:1px;}
   table.items td{border:1px solid var(--line);padding:3px;vertical-align:top;}
   table.items td input{border:none;padding:5px 6px;width:100%;font-size:.85rem;}
   table.items td input:focus{outline:2px solid var(--accent-soft);background:#fffef9;}
@@ -267,6 +267,28 @@
   .chat-input-row input{
     flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:.85rem;
   }
+
+  /* --- Price table modal, opened from the FAB mirroring the chat one --- */
+  .price-fab{right:auto;left:22px;}
+  .price-modal{max-width:720px;}
+  .price-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+  .price-toolbar input{
+    flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:.88rem;font-family:inherit;
+  }
+  .price-count{font-size:.8rem;color:var(--muted);white-space:nowrap;}
+  table.price-table{width:100%;border-collapse:collapse;font-size:.85rem;}
+  table.price-table th{
+    background:#f5f2ea;font-weight:600;text-align:left;padding:6px;
+    border:1px solid var(--line);font-size:.76rem;color:var(--muted);
+  }
+  table.price-table td{border:1px solid var(--line);padding:3px 6px;vertical-align:middle;}
+  table.price-table td.pt-idx{color:var(--muted);font-size:.78rem;text-align:center;}
+  table.price-table td.pt-price input{
+    width:100%;border:none;padding:5px 6px;font-size:.85rem;font-family:inherit;
+    text-align:right;font-weight:700;color:#e5342a;background:transparent;
+  }
+  table.price-table td.pt-price input:focus{outline:2px solid var(--accent-soft);background:#fffef9;}
+  table.price-table td.pt-actions{text-align:center;white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -496,6 +518,28 @@
   </div>
 </div>
 
+<!-- Full price table, mirroring the chat widget on the opposite corner -->
+<button class="chat-fab price-fab" id="priceFabBtn" title="Xem bảng giá sản phẩm">📋</button>
+<div class="modal-overlay hidden" id="priceOverlay">
+  <div class="modal-box price-modal">
+    <div class="modal-head">
+      <h2>Bảng giá sản phẩm</h2>
+      <button class="modal-close" id="priceCloseBtn">✕</button>
+    </div>
+    <div class="modal-content">
+      <div class="price-toolbar">
+        <input type="text" id="priceSearch" autocomplete="off" placeholder="Tìm theo mã sản phẩm…">
+        <span class="price-count" id="priceCount"></span>
+        <button class="plain small-btn" id="priceCopyAllBtn" title="Copy toàn bộ bảng giá dạng JSON">⧉ Copy JSON</button>
+      </div>
+      <div id="priceTableWrap"></div>
+      <div class="status" id="priceCopyStatus"></div>
+      <p class="note">Giá được tự động lưu/cập nhật từ cột <strong>单价(元)</strong> mỗi khi bạn tải file PDF lên. Có thể sửa trực tiếp giá trong bảng, hoặc xóa mã không dùng nữa.<br>
+      <strong>Chuyển sang máy/trình duyệt khác:</strong> bấm <strong>Copy JSON</strong> để chép toàn bộ bảng giá, rồi ở máy kia mở hộp chat 💬 → nút ⚙ → dán vào ô JSON → <strong>Lưu dữ liệu</strong>.</p>
+    </div>
+  </div>
+</div>
+
 <!-- Floating price-lookup chat widget: type a product code, get back "mã: giá" -->
 <button class="chat-fab" id="chatFabBtn" title="Tra cứu giá sản phẩm">💬</button>
 <div class="chat-panel hidden" id="chatPanel">
@@ -601,9 +645,11 @@ async function handleSingleFile(file){
     document.getElementById('headerCard').classList.remove('hidden');
     document.getElementById('itemsCard').classList.remove('hidden');
     document.getElementById('exportCard').classList.remove('hidden');
+    const priceSync = syncPricesFromRows(parsed.rows);
+    reportPriceSync(priceSync);
     statusEl.textContent = `Đã đọc xong "${file.name}" — ${parsed.rows.length} dòng sản phẩm. `
       + (parsed.columnEdgeCount ? `Đã dò được khung bảng (${parsed.columnEdgeCount} vạch cột).` : 'Không thấy khung bảng, dùng chế độ dò theo vị trí chữ.')
-      + ' [v5]';
+      + ' [v5]' + priceSyncSummary(priceSync);
   }catch(err){
     console.error(err);
     statusEl.textContent = 'Không đọc được PDF: ' + err.message;
@@ -745,6 +791,11 @@ async function handleBatchFiles(files){
     });
   });
 
+  // Prices are per product code, so they are worth keeping even from an order that turns
+  // out to be a duplicate — sync before grouping drops anything.
+  const priceSync = syncPricesFromRows(parsedOrders.flatMap(p => p.rows));
+  reportPriceSync(priceSync);
+
   const outputs = groupIntoOutputs(parsedOrders);
 
   // Render each file's final status line(s) now that we know which of its entries survived.
@@ -781,7 +832,8 @@ async function handleBatchFiles(files){
   const months = new Set();
   outputs.forEach(out => archiveOutput(out).forEach(mk => months.add(mk)));
 
-  statusEl.textContent = `Đã đọc ${eligibleFiles.length} file — gộp thành ${outputs.length} file Excel theo ngày.`;
+  statusEl.textContent = `Đã đọc ${eligibleFiles.length} file — gộp thành ${outputs.length} file Excel theo ngày.`
+    + priceSyncSummary(priceSync);
   if (months.size){
     batchStatus.textContent = `✓ Đã cộng dồn vào dữ liệu tháng: ${[...months].sort().map(formatMonthKey).join(', ')}.`;
   }
@@ -1670,6 +1722,7 @@ function parseTable(lines, grid){
     if (s.includes('名称') || s.includes('品名')) return 'name';
     if (s.includes('规格')) return 'spec';
     if (s.includes('数量')) return 'qty';
+    if (s.includes('单价')) return 'price';
     if (s.includes('单位')) return 'unit';
     if (s.includes('备注')) return 'remark';
     return null;
@@ -1735,7 +1788,8 @@ function parseTable(lines, grid){
       spec: join(r.cells.spec),
       qty: join(r.cells.qty).replace(/[^\d]/g, ''),
       unit: normalizeUnit(join(r.cells.unit)),
-      remark: join(r.cells.remark).trim()
+      remark: join(r.cells.remark).trim(),
+      price: parsePriceText(join(r.cells.price))
     }));
   }
 
@@ -1777,7 +1831,8 @@ function parseTable(lines, grid){
       spec: join(items.filter(it => it.x >= bound)),
       qty: r.qty || '',
       unit: normalizeUnit(r.unit),
-      remark: ''
+      remark: '',
+      price: null // no column bounds without a grid — prices are not reliable enough to save
     };
   });
 }
@@ -2181,6 +2236,75 @@ function formatPrice(v){
   return isNaN(n) ? String(v) : n.toLocaleString('vi-VN');
 }
 
+/* Unit prices are written in Western format both in the PDFs ("1,234.56", "￥8.50",
+   "8.50元") and in the price-table inputs. Returns null when there is no number at all. */
+function parsePriceText(raw){
+  const s = String(raw == null ? '' : raw).replace(/[^\d.\-]/g, '');
+  if (!/\d/.test(s)) return null;
+  const n = Number(s);
+  return isNaN(n) ? null : n;
+}
+
+// Single write path for the price data: localStorage plus the chat's JSON textarea.
+function persistPriceMap(){
+  try { localStorage.setItem(PRICE_DATA_KEY, JSON.stringify(priceMap)); } catch(e){ /* storage unavailable, keep in-memory only */ }
+  document.getElementById('chatDataInput').value = JSON.stringify(priceMap, null, 2);
+}
+
+// Redraw the price table when a change came from outside it (upload, /update, JSON paste).
+function refreshPriceTableIfOpen(){
+  if (!document.getElementById('priceOverlay').classList.contains('hidden')) renderPriceTable();
+}
+
+function priceKeyFor(code){
+  return Object.keys(priceMap).find(k => k.toLowerCase() === code.toLowerCase());
+}
+
+/* Every product row read from a PDF carries the 单价(元) of its 产品编号. Fold those into
+   the saved price data: unknown codes get added, a differing price overwrites the stored
+   one. Returns what changed so the caller can report it. */
+function syncPricesFromRows(rows){
+  const added = [], updated = [];
+  (rows || []).forEach(r => {
+    const code = (r.code || '').trim();
+    const price = r.price;
+    if (!code || price == null) return;
+    const key = priceKeyFor(code);
+    if (!key){
+      priceMap[code] = price;
+      added.push(code);
+    } else if (Number(priceMap[key]) !== price){
+      updated.push({ code: key, from: priceMap[key], to: price });
+      priceMap[key] = price;
+    }
+  });
+  if (added.length || updated.length){
+    persistPriceMap();
+    refreshPriceTableIfOpen();
+  }
+  return { added, updated };
+}
+
+// One-line tail for the upload status bar.
+function priceSyncSummary(res){
+  const parts = [];
+  if (res.added.length) parts.push(`thêm ${res.added.length} mã mới`);
+  if (res.updated.length) parts.push(`cập nhật ${res.updated.length} mã đổi giá`);
+  return parts.length ? ` Bảng giá: ${parts.join(', ')}.` : '';
+}
+
+// Detail of the same sync, dropped into the chat log so there is a record of what changed.
+function reportPriceSync(res){
+  if (!res.added.length && !res.updated.length) return;
+  const lines = [];
+  if (res.added.length){
+    lines.push(`📥 Đã thêm ${res.added.length} mã mới: ${res.added.slice(0,10).join(', ')}${res.added.length > 10 ? '…' : ''}`);
+  }
+  res.updated.slice(0,8).forEach(u => lines.push(`🔄 ${u.code}: ${formatPrice(u.from)} → ${formatPrice(u.to)}`));
+  if (res.updated.length > 8) lines.push(`…và ${res.updated.length - 8} mã khác đã đổi giá.`);
+  appendChatHtml(lines.map(escapeHtml).join('<br>'), 'bot');
+}
+
 function appendChatMessage(text, cls){
   const log = document.getElementById('chatLog');
   const msg = document.createElement('div');
@@ -2227,13 +2351,119 @@ function legacyCopy(text){
   document.body.removeChild(ta);
 }
 
-document.getElementById('chatLog').addEventListener('click', e => {
-  const btn = e.target.closest('.copy-btn');
+function bindCopyButtons(container){
+  container.addEventListener('click', e => {
+    const btn = e.target.closest('.copy-btn');
+    if (!btn) return;
+    copyToClipboard(btn.dataset.copy);
+    btn.innerHTML = ICON_CHECK;
+    btn.classList.add('copy-btn-done');
+    setTimeout(() => { btn.innerHTML = ICON_COPY; btn.classList.remove('copy-btn-done'); }, 1000);
+  });
+}
+bindCopyButtons(document.getElementById('chatLog'));
+bindCopyButtons(document.getElementById('priceTableWrap'));
+
+/* ====== Price table modal: the whole saved price data in one list, filterable,
+   with each price editable in place. ====== */
+
+function renderPriceTable(){
+  const wrap = document.getElementById('priceTableWrap');
+  const query = document.getElementById('priceSearch').value.trim().toLowerCase();
+  const all = Object.keys(priceMap).sort((a,b) => a.localeCompare(b, undefined, {numeric:true}));
+  const shown = query ? all.filter(c => c.toLowerCase().includes(query)) : all;
+  document.getElementById('priceCount').textContent = query
+    ? `${shown.length}/${all.length} mã` : `${all.length} mã`;
+
+  if (all.length === 0){
+    wrap.innerHTML = '<p class="excel-preview-empty">Chưa có dữ liệu giá. Tải một file PDF lên để tự động lưu giá, hoặc dán JSON trong hộp chat tra cứu.</p>';
+    return;
+  }
+  if (shown.length === 0){
+    wrap.innerHTML = '<p class="excel-preview-empty">Không có mã nào khớp với từ khóa.</p>';
+    return;
+  }
+  const rows = shown.map((code, i) => `<tr>
+      <td class="pt-idx">${i + 1}</td>
+      <td>${escapeHtml(code)}</td>
+      <td class="pt-price"><input type="text" data-code="${escapeHtml(code)}" value="${escapeHtml(String(priceMap[code]))}"></td>
+      <td class="pt-actions">
+        <button class="copy-btn" data-copy="${escapeHtml(String(priceMap[code]))}" title="Copy giá">${ICON_COPY}</button>
+        <button class="del-btn" data-del="${escapeHtml(code)}" title="Xóa mã này">✕</button>
+      </td>
+    </tr>`).join('');
+  wrap.innerHTML = `<table class="price-table">
+    <thead><tr>
+      <th style="width:44px">#</th>
+      <th>产品编号<span class="th-sub">Mã sản phẩm</span></th>
+      <th style="width:140px">单价(元)<span class="th-sub">Đơn giá</span></th>
+      <th style="width:72px"></th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+document.getElementById('priceSearch').addEventListener('input', renderPriceTable);
+
+// Editing a price commits on blur/Enter; an unreadable value falls back to what was stored.
+document.getElementById('priceTableWrap').addEventListener('change', e => {
+  const input = e.target.closest('input[data-code]');
+  if (!input) return;
+  const code = input.dataset.code;
+  const price = parsePriceText(input.value);
+  if (price === null || price === Number(priceMap[code])){
+    input.value = String(priceMap[code]);
+    return;
+  }
+  priceMap[code] = price;
+  persistPriceMap();
+  input.value = String(price);
+  // Patch the row's copy button rather than redrawing — the user may already be typing
+  // in the next row's input.
+  const copyBtn = input.closest('tr').querySelector('.copy-btn');
+  if (copyBtn) copyBtn.dataset.copy = String(price);
+});
+document.getElementById('priceTableWrap').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.matches('input[data-code]')) e.target.blur();
+});
+
+document.getElementById('priceTableWrap').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-del]');
   if (!btn) return;
-  copyToClipboard(btn.dataset.copy);
-  btn.innerHTML = ICON_CHECK;
-  btn.classList.add('copy-btn-done');
-  setTimeout(() => { btn.innerHTML = ICON_COPY; btn.classList.remove('copy-btn-done'); }, 1000);
+  const code = btn.dataset.del;
+  if (!confirm(`Xóa mã "${code}" khỏi bảng giá?`)) return;
+  delete priceMap[code];
+  persistPriceMap();
+  renderPriceTable();
+});
+
+/* Copies the whole price data as JSON — the same shape the chat's ⚙ panel reads back,
+   so a table can be moved to another browser by paste. Always the full map, never the
+   search-filtered subset. */
+document.getElementById('priceCopyAllBtn').addEventListener('click', () => {
+  const btn = document.getElementById('priceCopyAllBtn');
+  const copyStatus = document.getElementById('priceCopyStatus');
+  const count = Object.keys(priceMap).length;
+  if (count === 0){
+    copyStatus.textContent = 'Chưa có dữ liệu giá để copy.';
+    return;
+  }
+  copyToClipboard(JSON.stringify(priceMap, null, 2));
+  const label = btn.textContent;
+  btn.textContent = '✓ Đã copy';
+  copyStatus.textContent = `✓ Đã copy ${count} mã sản phẩm dạng JSON — dán vào ô "Dữ liệu JSON" của hộp chat ở trình duyệt khác để nạp.`;
+  setTimeout(() => { btn.textContent = label; }, 1200);
+});
+
+document.getElementById('priceFabBtn').addEventListener('click', () => {
+  document.getElementById('priceSearch').value = '';
+  document.getElementById('priceCopyStatus').textContent = '';
+  renderPriceTable();
+  document.getElementById('priceOverlay').classList.remove('hidden');
+});
+document.getElementById('priceCloseBtn').addEventListener('click', () => {
+  document.getElementById('priceOverlay').classList.add('hidden');
+});
+document.getElementById('priceOverlay').addEventListener('click', e => {
+  if (e.target.id === 'priceOverlay') document.getElementById('priceOverlay').classList.add('hidden');
 });
 
 function lookupPrice(rawCode){
@@ -2264,11 +2494,10 @@ function handleChatCommand(text){
     const rawPrice = updateMatch[2].trim();
     const priceNum = Number(rawPrice.replace(/[.,\s]/g, ''));
     const price = isNaN(priceNum) ? rawPrice : priceNum;
-    const existingKey = Object.keys(priceMap).find(k => k.toLowerCase() === code.toLowerCase());
-    const finalKey = existingKey || code;
+    const finalKey = priceKeyFor(code) || code;
     priceMap[finalKey] = price;
-    try { localStorage.setItem(PRICE_DATA_KEY, JSON.stringify(priceMap)); } catch(e){ /* storage unavailable, keep in-memory only */ }
-    document.getElementById('chatDataInput').value = JSON.stringify(priceMap, null, 2);
+    persistPriceMap();
+    refreshPriceTableIfOpen();
     appendChatHtml(renderPriceLine('✓ Đã cập nhật ', finalKey, price), 'bot');
     return;
   }
@@ -2308,7 +2537,8 @@ document.getElementById('chatDataSaveBtn').addEventListener('click', () => {
   }
   priceMap = normalizePriceJson(parsed);
   const count = Object.keys(priceMap).length;
-  try { localStorage.setItem(PRICE_DATA_KEY, JSON.stringify(priceMap)); } catch(e){ /* storage unavailable, keep in-memory only */ }
+  persistPriceMap();
+  refreshPriceTableIfOpen();
   dataStatus.textContent = `✓ Đã lưu ${count} mã sản phẩm.`;
   appendChatMessage(`Đã cập nhật dữ liệu giá (${count} mã sản phẩm). Nhập mã để tra giá.`, 'bot');
 });
