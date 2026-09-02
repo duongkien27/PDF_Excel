@@ -1700,6 +1700,17 @@ function parseTable(lines, grid){
     return null;
   };
 
+  // A header cell can be laid out over several text lines: "单价" sits one line above
+  // "（元）", while the single-line labels (产品编号, 数量, 单位…) sit between them on their
+  // own vertical centre. Matching roles against that middle line alone leaves the 单价
+  // column with no role, and everything in it is silently dropped — so pool every item
+  // inside the header's row band and read the labels from that.
+  const headerBand = bandFor(headerLine.y, headerLine.page);
+  const headerItems = headerBand
+    ? lines.filter(l => l.page === headerLine.page && l.y <= headerBand.top && l.y >= headerBand.bottom)
+           .flatMap(l => l.items)
+    : headerLine.items;
+
   const spacing = anchors.length > 1 ? Math.abs(anchors[0].y - anchors[1].y) : 20;
   const rows = anchors.map((a, i) => {
     const band = bandFor(a.y, a.page);
@@ -1734,7 +1745,7 @@ function parseTable(lines, grid){
     // divider between 物料代码 and 品名 in some PDF exports), merging two columns into
     // one bucket and corrupting every row's text. When two header labels with different
     // roles land in the same bucket, split it at their midpoint.
-    const roleHits = headerLine.items
+    const roleHits = headerItems
       .map(it => ({ role: headerRoleFor(it.str), cx: it.x + (it.width || 0) / 2 }))
       .filter(h => h.role)
       .sort((a, b) => a.cx - b.cx);
@@ -1756,7 +1767,7 @@ function parseTable(lines, grid){
 
   const roleOf = {};
   if (edges){
-    headerLine.items.forEach(it => {
+    headerItems.forEach(it => {
       const c = colOf(it);
       if (c === null) return;
       const role = headerRoleFor(it.str);
