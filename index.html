@@ -1686,6 +1686,30 @@ function parseTable(lines, grid){
     .map(l => ({ line: l, m: charMapWithSpans(l).text.match(codeRe) }))
     .filter(a => a.m)
     .map(a => ({ y: a.line.y, page: a.line.page, code: a.m[0] }));
+  if (anchors.length === 0 && columnEdges && columnEdges.length >= 4) {
+    const codeHdr = headerLine.items.find(it => it.str.includes('产品编号'));
+    if (codeHdr) {
+      const cx = codeHdr.x + (codeHdr.width || 0) / 2;
+      let cL = columnEdges[0], cR = columnEdges[1];
+      for (let k = 0; k < columnEdges.length - 1; k++) {
+        if (cx >= columnEdges[k] && cx < columnEdges[k+1]) { cL = columnEdges[k]; cR = columnEdges[k+1]; break; }
+      }
+      const inCodeCol = it => { const c = it.x + (it.width||0)/2; return c >= cL && c < cR; };
+      for (let i = 0; i < bodyLines.length; i++) {
+        const t1 = bodyLines[i].items.filter(inCodeCol).map(it=>it.str).join('');
+        const m1 = t1.match(codeRe);
+        if (m1) { anchors.push({ y: bodyLines[i].y, page: bodyLines[i].page, code: m1[0] }); continue; }
+        if (!t1.match(/\d{3}-\d{3,4}-$/)) continue;
+        for (let j = i+1; j <= Math.min(i+3, bodyLines.length-1); j++) {
+          const l2 = bodyLines[j];
+          if (l2.page !== bodyLines[i].page || Math.abs(bodyLines[i].y - l2.y) > 30) break;
+          const t2 = l2.items.filter(inCodeCol).map(it=>it.str).join('');
+          const m = (t1+t2).match(codeRe);
+          if (m) { anchors.push({ y: bodyLines[i].y, page: bodyLines[i].page, code: m[0] }); i = j; break; }
+        }
+      }
+    }
+  }
   if (anchors.length === 0) return [];
 
   // Prefer the drawn grid's horizontal rulings for row extents — rows vary a lot in
