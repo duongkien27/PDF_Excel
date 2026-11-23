@@ -1533,7 +1533,7 @@ function parseHeader(fullText){
   const orderNo = grab(/订单编码[：:]\s*([A-Za-z0-9\-]+)/);
   const customer = grab(/甲方[：:]\s*(.+?)(?=订单编码|联系人|电话|$)/);
   const address = grab(/交货地点[：:]\s*(.+?)(?=包装与标识要求|$)/);
-  const date = normalizeOrderDate(grab(/日期[：:]\s*(\d{4}\/\d{1,2}\/\d{1,2})/));
+  const date = normalizeOrderDate(grab(/日期[：:]\s*(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/));
   return { orderNo, customer, address, orderDate: date };
 }
 
