@@ -298,11 +298,12 @@
     <table class="items">
       <thead>
         <tr>
-          <th style="width:14%">物料代码</th>
-          <th style="width:20%">品名</th>
-          <th style="width:34%">规格</th>
-          <th style="width:8%">数量</th>
-          <th style="width:8%">单位</th>
+          <th style="width:13%">物料代码</th>
+          <th style="width:18%">品名</th>
+          <th style="width:28%">规格</th>
+          <th style="width:7%">数量</th>
+          <th style="width:7%">单位</th>
+          <th style="width:11%">交期</th>
           <th style="width:10%">备注</th>
           <th class="col-del"></th>
         </tr>
@@ -585,7 +586,7 @@ async function exportImageExcel(){
   const centerC = {horizontal:'center', vertical:'middle'};
 
   const setRow = (rowIdx, text, opts) => {
-    ws.mergeCells(rowIdx,1,rowIdx,8);
+    ws.mergeCells(rowIdx,1,rowIdx,9);
     const cell = ws.getCell(rowIdx,1);
     cell.value = text;
     cell.font = {name:'SimSun', size: opts.size||11, bold: opts.bold!==false};
@@ -873,6 +874,7 @@ function parseTable(lines, columnEdges){
       else if (s.includes('规格')) roleOf[c] = 'spec';
       else if (s.includes('数量')) roleOf[c] = 'qty';
       else if (s.includes('单位')) roleOf[c] = 'unit';
+      else if (s.includes('交期')) roleOf[c] = 'delivery';
       else if (s.includes('备注')) roleOf[c] = 'remark';
     });
   }
@@ -901,6 +903,7 @@ function parseTable(lines, columnEdges){
       spec: join(r.cells.spec),
       qty: join(r.cells.qty).replace(/[^\d]/g, ''),
       unit: normalizeUnit(join(r.cells.unit)),
+      delivery: join(r.cells.delivery).trim(),
       remark: join(r.cells.remark).trim()
     }));
   }
@@ -943,6 +946,7 @@ function parseTable(lines, columnEdges){
       spec: join(items.filter(it => it.x >= bound)),
       qty: r.qty || '',
       unit: normalizeUnit(r.unit),
+      delivery: '',
       remark: ''
     };
   });
@@ -959,9 +963,9 @@ function fillHeader(p){
 }
 
 function addItemRow(data){
-  data = data || { code:'', name:'', spec:'', qty:'', unit:'PCS', remark:'' };
+  data = data || { code:'', name:'', spec:'', qty:'', unit:'PCS', delivery:'', remark:'' };
   const tr = document.createElement('tr');
-  const fields = ['code','name','spec','qty','unit','remark'];
+  const fields = ['code','name','spec','qty','unit','delivery','remark'];
   fields.forEach(f => {
     const td = document.createElement('td');
     const input = document.createElement('input');
@@ -1018,7 +1022,7 @@ async function exportExcel(){
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('采购订单');
   ws.columns = [
-    {width:13.25},{width:14.125},{width:19.375},{width:17.875},{width:44.75},{width:9},{width:5.125},{width:12}
+    {width:13.25},{width:14.125},{width:19.375},{width:17.875},{width:44.75},{width:9},{width:5.125},{width:12},{width:12}
   ];
 
   const thin = {style:'thin'};
@@ -1026,7 +1030,7 @@ async function exportExcel(){
   const centerC = {horizontal:'center', vertical:'middle'};
 
   const setRow = (rowIdx, text, opts) => {
-    ws.mergeCells(rowIdx,1,rowIdx,8);
+    ws.mergeCells(rowIdx,1,rowIdx,9);
     const cell = ws.getCell(rowIdx,1);
     cell.value = text;
     cell.font = {name:'SimSun', size: opts.size||11, bold: opts.bold!==false};
@@ -1040,7 +1044,7 @@ async function exportExcel(){
   setRow(4, '客户：' + customer + ' ', {size:11, align:'left'});
   setRow(5, '送货地址：' + address, {size:11, align:'left'});
 
-  const headers = ['订单日期','订单号','物料代码','品名','规格','数量','单位','备注'];
+  const headers = ['订单日期','订单号','物料代码','品名','规格','数量','单位','备注','交期'];
   headers.forEach((h,i) => {
     const c = ws.getCell(7, i+1);
     c.value = h;
@@ -1053,7 +1057,7 @@ async function exportExcel(){
   rowsData.forEach((r, i) => {
     const rowIdx = startRow + i;
     const qtyNum = parseFloat(String(r.qty).replace(/[^\d.]/g, ''));
-    const rowVals = [orderDate, orderNo, r.code, r.name, r.spec, isNaN(qtyNum) ? '' : qtyNum, r.unit, r.remark];
+    const rowVals = [orderDate, orderNo, r.code, r.name, r.spec, isNaN(qtyNum) ? '' : qtyNum, r.unit, r.remark, r.delivery || ''];
     rowVals.forEach((v, ci) => {
       const c = ws.getCell(rowIdx, ci+1);
       c.value = v;
@@ -1073,6 +1077,7 @@ async function exportExcel(){
 
   const totalRow = endRow + 1;
   ws.mergeCells(totalRow,1,totalRow,5);
+  ws.getCell(totalRow,9).border = border;
   const totalLabel = ws.getCell(totalRow,1);
   totalLabel.value = '合计';
   totalLabel.font = {name:'SimSun', size:11, bold:true};
