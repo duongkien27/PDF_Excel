@@ -479,11 +479,12 @@
     <table class="items">
       <thead>
         <tr>
-          <th style="width:14%">物料代码<span class="th-sub">Mã hàng</span></th>
-          <th style="width:20%">品名<span class="th-sub">Tên sản phẩm</span></th>
-          <th style="width:34%">规格<span class="th-sub">Quy cách</span></th>
-          <th style="width:8%">数量<span class="th-sub">Số lượng</span></th>
-          <th style="width:8%">单位<span class="th-sub">Đơn vị</span></th>
+          <th style="width:13%">物料代码<span class="th-sub">Mã hàng</span></th>
+          <th style="width:18%">品名<span class="th-sub">Tên sản phẩm</span></th>
+          <th style="width:28%">规格<span class="th-sub">Quy cách</span></th>
+          <th style="width:7%">数量<span class="th-sub">Số lượng</span></th>
+          <th style="width:7%">单位<span class="th-sub">Đơn vị</span></th>
+          <th style="width:11%">交期<span class="th-sub">Ngày giao</span></th>
           <th style="width:10%">备注<span class="th-sub">Ghi chú</span></th>
           <th class="col-del"></th>
         </tr>
@@ -1106,7 +1107,7 @@ function renderMonthTable(mk, entry){
 
   const headHtml = [
     ['订单日期','Ngày đặt hàng'], ['订单号','Số đơn hàng'], ['物料代码','Mã hàng'], ['品名','Tên sản phẩm'],
-    ['规格','Quy cách'], ['数量','Số lượng'], ['单位','Đơn vị'], ['备注','Ghi chú']
+    ['规格','Quy cách'], ['数量','Số lượng'], ['单位','Đơn vị'], ['备注','Ghi chú'], ['交期','Ngày giao']
   ].map(([h, sub]) => `<td class="ep-head">${escapeHtml(h)}<br><span style="font-weight:400;font-size:.85em;opacity:.75;">${escapeHtml(sub)}</span></td>`).join('');
 
   const bodyHtml = [];
@@ -1120,7 +1121,7 @@ function renderMonthTable(mk, entry){
           ? `<td class="ep-group" rowspan="${dateRowCount}">${escapeHtml(o.orderDate)}</td>` : '';
         const noCell = i === 0
           ? `<td class="ep-group" rowspan="${o.rows.length}">${escapeHtml(o.orderNo)}</td>` : '';
-        bodyHtml.push(`<tr>${dateCell}${noCell}<td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.spec)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.unit)}</td><td>${escapeHtml(r.remark)}</td></tr>`);
+        bodyHtml.push(`<tr>${dateCell}${noCell}<td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.spec)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.unit)}</td><td>${escapeHtml(r.remark)}</td><td>${escapeHtml(r.delivery||'')}</td></tr>`);
         firstOfDate = false;
       });
     });
@@ -1759,6 +1760,7 @@ function parseTable(lines, grid){
     if (s.includes('数量')) return 'qty';
     if (s.includes('单价')) return 'price';
     if (s.includes('单位')) return 'unit';
+    if (s.includes('交期')) return 'delivery';
     if (s.includes('备注')) return 'remark';
     return null;
   };
@@ -1823,6 +1825,7 @@ function parseTable(lines, grid){
       spec: join(r.cells.spec),
       qty: join(r.cells.qty).replace(/[^\d]/g, ''),
       unit: normalizeUnit(join(r.cells.unit)),
+      delivery: join(r.cells.delivery).trim(),
       remark: join(r.cells.remark).trim(),
       price: parsePriceText(join(r.cells.price))
     }));
@@ -1866,8 +1869,9 @@ function parseTable(lines, grid){
       spec: join(items.filter(it => it.x >= bound)),
       qty: r.qty || '',
       unit: normalizeUnit(r.unit),
+      delivery: '',
       remark: '',
-      price: null // no column bounds without a grid — prices are not reliable enough to save
+      price: null
     };
   });
 }
@@ -1882,10 +1886,10 @@ function fillHeader(p){
   document.getElementById('hOrderNo').value = p.orderNo || '';
 }
 
-const ITEM_FIELDS = ['code','name','spec','qty','unit','remark'];
+const ITEM_FIELDS = ['code','name','spec','qty','unit','delivery','remark'];
 
 function createItemRow(data, onDelete){
-  data = data || { code:'', name:'', spec:'', qty:'', unit:'PCS', remark:'' };
+  data = data || { code:'', name:'', spec:'', qty:'', unit:'PCS', delivery:'', remark:'' };
   const tr = document.createElement('tr');
   ITEM_FIELDS.forEach(f => {
     const td = document.createElement('td');
@@ -2039,7 +2043,7 @@ async function buildOrderWorkbook(header, orderGroups){
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('采购订单');
   ws.columns = [
-    {width:13.25},{width:14.125},{width:19.375},{width:17.875},{width:44.75},{width:9},{width:5.125},{width:12}
+    {width:13.25},{width:14.125},{width:19.375},{width:17.875},{width:44.75},{width:9},{width:5.125},{width:12},{width:12}
   ];
 
   const thin = {style:'thin'};
@@ -2047,7 +2051,7 @@ async function buildOrderWorkbook(header, orderGroups){
   const centerC = {horizontal:'center', vertical:'middle'};
 
   const setRow = (rowIdx, text, opts) => {
-    ws.mergeCells(rowIdx,1,rowIdx,8);
+    ws.mergeCells(rowIdx,1,rowIdx,9);
     const cell = ws.getCell(rowIdx,1);
     cell.value = text;
     cell.font = {name:'SimSun', size: opts.size||11, bold: opts.bold!==false};
@@ -2061,7 +2065,7 @@ async function buildOrderWorkbook(header, orderGroups){
   setRow(4, '客户：' + customer + ' ', {size:11, align:'left'});
   setRow(5, '送货地址：' + address, {size:11, align:'left'});
 
-  const headers = ['订单日期','订单号','物料代码','品名','规格','数量','单位','备注'];
+  const headers = ['订单日期','订单号','物料代码','品名','规格','数量','单位','备注','交期'];
   headers.forEach((h,i) => {
     const c = ws.getCell(7, i+1);
     c.value = h;
@@ -2074,7 +2078,7 @@ async function buildOrderWorkbook(header, orderGroups){
   rowsFlat.forEach((r, i) => {
     const rowIdx = startRow + i;
     const qtyNum = parseFloat(String(r.qty).replace(/[^\d.]/g, ''));
-    const rowVals = [r.orderDate, r.orderNo, r.code, r.name, r.spec, isNaN(qtyNum) ? '' : qtyNum, r.unit, r.remark];
+    const rowVals = [r.orderDate, r.orderNo, r.code, r.name, r.spec, isNaN(qtyNum) ? '' : qtyNum, r.unit, r.remark, r.delivery || ''];
     rowVals.forEach((v, ci) => {
       const c = ws.getCell(rowIdx, ci+1);
       c.value = v;
@@ -2123,6 +2127,7 @@ async function buildOrderWorkbook(header, orderGroups){
   sumCell.border = border;
   ws.getCell(totalRow,7).border = border;
   ws.getCell(totalRow,8).border = border;
+  ws.getCell(totalRow,9).border = border;
 
   const contactRow = totalRow + 2;
   ws.getCell(contactRow,1).value = contact;
@@ -2194,7 +2199,7 @@ function renderPreviewTable(header, orderGroups){
 
   const headHtml = [
     ['订单日期','Ngày đặt hàng'], ['订单号','Số đơn hàng'], ['物料代码','Mã hàng'], ['品名','Tên sản phẩm'],
-    ['规格','Quy cách'], ['数量','Số lượng'], ['单位','Đơn vị'], ['备注','Ghi chú']
+    ['规格','Quy cách'], ['数量','Số lượng'], ['单位','Đơn vị'], ['备注','Ghi chú'], ['交期','Ngày giao']
   ].map(([h, sub]) => `<td class="ep-head">${escapeHtml(h)}<br><span style="font-weight:400;font-size:.85em;opacity:.75;">${escapeHtml(sub)}</span></td>`).join('');
 
   let rowIdx = 0;
@@ -2203,7 +2208,7 @@ function renderPreviewTable(header, orderGroups){
     g.rows.forEach((r, i) => {
       const dateCell = rowIdx === 0 ? `<td class="ep-group" rowspan="${rowsFlat.length}">${escapeHtml(orderDate)}</td>` : '';
       const noCell = i === 0 ? `<td class="ep-group" rowspan="${g.rows.length}">${escapeHtml(g.orderNo)}</td>` : '';
-      rowsHtml.push(`<tr>${dateCell}${noCell}<td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.spec)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.unit)}</td><td>${escapeHtml(r.remark)}</td></tr>`);
+      rowsHtml.push(`<tr>${dateCell}${noCell}<td>${escapeHtml(r.code)}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.spec)}</td><td>${escapeHtml(r.qty)}</td><td>${escapeHtml(r.unit)}</td><td>${escapeHtml(r.remark)}</td><td>${escapeHtml(r.delivery||'')}</td></tr>`);
       rowIdx++;
     });
   });
