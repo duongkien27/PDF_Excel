@@ -789,10 +789,22 @@ async function extractColumnEdges(pdf){
     const w = r.right - r.left, h = r.top - r.bottom;
     return w > 10 && w < 400 && h > 3 && h < 200;
   });
-  if (cells.length < 3) return null;
+
+  const vBorders = rects.filter(r => {
+    const w = r.right - r.left, h = r.top - r.bottom;
+    return w < 2 && h > 20;
+  });
 
   const raw = [];
-  cells.forEach(r => { raw.push(r.left); raw.push(r.right); });
+  if (vBorders.length >= 4) {
+    const xs = [...new Set(vBorders.map(r => Math.round(r.left * 10) / 10))];
+    xs.forEach(x => raw.push(x));
+  }
+  if (cells.length >= 3) {
+    cells.forEach(r => { raw.push(r.left); raw.push(r.right); });
+  }
+  if (raw.length === 0) return null;
+
   raw.sort((a,b) => a - b);
   const edges = [];
   raw.forEach(v => {
